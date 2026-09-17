@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Gelembung komik putih -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,26h40a12,12 0 0 1 12,12v24a12,12 0 0 1 -12,12H52l-14,14v-14h-4a12,12 0 0 1 -12,-12V38a12,12 0 0 1 12,-12z" />
+    <!-- Tiga baris teks (simbol hasil OCR per-bubble) -->
+    <path
+        android:strokeColor="#1A73E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M42,42h24" />
+    <path
+        android:strokeColor="#1A73E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M42,51h24" />
+    <path
+        android:strokeColor="#1A73E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M42,60h15" />
+</vector>
