@@ -312,7 +312,7 @@ object Unwatermark {
         }
 
         var imgPixelOffset = 0
-        val imgW = w // referensi: img_w = w (tanpa margin ekstra)
+        // Referensi memakai img_w = w (tanpa margin ekstra) di blok alignment.
         var wmWork = wmPx
 
         if (o.wholePxRadius > 0 && needAlign) {
@@ -323,14 +323,14 @@ object Unwatermark {
             for (ox2 in 0..o.wholePxRadius * 2) {
                 for (oy2 in 0..o.wholePxRadius * 2) {
                     var offsetError = 0.0
-                    val offPx = 4 * (ox2 + oy2 * imgW)
+                    val offPx = 4 * (ox2 + oy2 * w)
                     for (axisList in listOf(horiz, vert)) {
                         for (ii in axisList) {
                             val ai = ii - 3
                             val nW = intArrayOf(ai - 8 * w, ai - 4 * w, ai, ai + 4 * w, ai + 8 * w)
                             val nI = intArrayOf(
-                                ai - 8 * imgW + offPx, ai - 4 * imgW + offPx, ai + offPx,
-                                ai + 4 * imgW + offPx, ai + 8 * imgW + offPx,
+                                ai - 8 * w + offPx, ai - 4 * w + offPx, ai + offPx,
+                                ai + 4 * w + offPx, ai + 8 * w + offPx,
                             )
                             val pA = DoubleArray(5) { alphaOf(wmWork, nW[it]) }
                             var spotError = 0.0
@@ -354,7 +354,7 @@ object Unwatermark {
                     if (offsetError < best.error) best = OE(offsetError, ox2, oy2)
                 }
             }
-            imgPixelOffset = 4 * (best.x + best.y * imgW)
+            imgPixelOffset = 4 * (best.x + best.y * w)
         }
 
         if (o.autoSubpixel && o.wholePxRadius == 0 && needAlign) {
