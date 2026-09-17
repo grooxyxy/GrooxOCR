@@ -39,6 +39,12 @@ object Watermark {
     enum class Blend(val label: String) {
         NORMAL("Normal"), MULTIPLY("Multiply/gelap"), SCREEN("Screen/terang")
     }
+    enum class Anchor(val label: String) {
+        AUTO("Otomatis (smart)"),
+        TL("Kiri atas"), TR("Kanan atas"),
+        BL("Kiri bawah"), BR("Kanan bawah"),
+        CENTER("Tengah"),
+    }
 
     data class Opts(
         val source: Source = Source.TEXT,
@@ -53,6 +59,7 @@ object Watermark {
         val mode: Mode = Mode.SMART,
         val blend: Blend = Blend.NORMAL,
         val avoidBubble: Boolean = true,
+        val anchor: Anchor = Anchor.AUTO, // posisi pilihan user (mode Smart)
     )
 
     data class Result(val images: List<File>, val zip: File)
@@ -159,7 +166,11 @@ object Watermark {
             )
             Mode.CENTER -> listOf(Spot(w / 2, h / 2, 0.0))
             Mode.TILE -> tileSpots(w, h, wmW, opts.rotation)
-            Mode.SMART -> smartSpots(bmp, wmW, margin, opts.count.coerceIn(1, 8), opts.avoidBubble)
+            Mode.SMART -> if (opts.anchor == Anchor.AUTO) {
+                smartSpots(bmp, wmW, margin, opts.count.coerceIn(1, 8), opts.avoidBubble)
+            } else {
+                anchorSpots(w, h, wmW, margin, opts.count.coerceIn(1, 8), opts.anchor)
+            }
         }
         val cv = Canvas(bmp)
         spots.forEach { s ->
@@ -187,6 +198,38 @@ object Watermark {
             y += step
             row++
         }
+        return out
+    }
+
+    /** Posisi pilihan user: mulai dari anchor, sisanya menyebar sudut lain + tengah. */
+    private fun anchorSpots(
+        w: Float, h: Float, wmW: Float, margin: Float, count: Int, anchor: Anchor,
+    ): List<Spot> {
+        fun px(ax: Float, ay: Float) = Spot(
+            (margin + wmW / 2 + ax * (w - 2 * margin - wmW)).coerceIn(0f, w),
+            (margin + wmW / 2 + ay * (h - 2 * margin - wmW)).coerceIn(0f, h),
+            0.0,
+        )
+        // Urutan sudut diputar agar anchor selalu pertama.
+        val corners = when (anchor) {
+            Anchor.TR -> listOf(1f to 0f, 0f to 0f, 1f to 1f, 0f to 1f)
+            Anchor.BL -> listOf(0f to 1f, 0f to 0f, 1f to 1f, 1f to 0f)
+            Anchor.BR -> listOf(1f to 1f, 1f to 0f, 0f to 1f, 0f to 0f)
+            Anchor.CENTER -> emptyList()
+            else -> listOf(0f to 0f, 1f to 0f, 0f to 1f, 1f to 1f) // TL/AUTO
+        }
+        if (anchor == Anchor.CENTER) {
+            // Tengah + variasi kecil agar count>1 tidak menumpuk.
+            return List(count) { i ->
+                val off = (i - (count - 1) / 2f) * wmW * 1.4f
+                Spot((w / 2 + off).coerceIn(0f, w), h / 2, 0.0)
+            }
+        }
+        val out = mutableListOf<Spot>()
+        corners.forEach { (ax, ay) ->
+            if (out.size < count) out.add(px(ax, ay))
+        }
+        while (out.size < count) out.add(px(0.5f, 0.5f))
         return out
     }
 

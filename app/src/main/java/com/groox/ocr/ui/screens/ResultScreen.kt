@@ -59,6 +59,7 @@ fun ResultScreen(
     val ctx = LocalContext.current
     var idx by remember { mutableIntStateOf(0) }
     var prefix by remember { mutableStateOf(BubblePrefix.NONE) }
+    var customPrefix by remember { mutableStateOf("- ") }
     // (indexGambar, idBubble) yang disembunyikan user.
     var hidden by remember(items) { mutableStateOf(setOf<Pair<Int, Int>>()) }
 
@@ -71,8 +72,8 @@ fun ResultScreen(
         }
     }
     val curVisible = visible.getOrElse(safeIdx) { emptyList() }
-    val allTxt = remember(visible, prefix) {
-        ExportUtils.batchBubblesToTxt(visible, prefix)
+    val allTxt = remember(visible, prefix, customPrefix) {
+        ExportUtils.batchBubblesToTxt(visible, prefix, customPrefix)
     }
     val hiddenHere = hidden.count { it.first == safeIdx }
 
@@ -139,6 +140,17 @@ fun ResultScreen(
                 }
             }
         }
+        if (prefix == BubblePrefix.CUSTOM) {
+            item {
+                OutlinedTextField(
+                    value = customPrefix,
+                    onValueChange = { customPrefix = it.take(16) },
+                    label = { Text("Awalan custom (mis. “- ”, “>> ”, “[TEKS] ”)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         if (cur != null) {
             item { ImageResultCard(item = cur) }
             item {
@@ -187,10 +199,10 @@ fun ResultScreen(
             items(curVisible, key = { it.id }) { b ->
                 val number = curVisible.indexOf(b) + 1
                 BubbleCard(
-                    text = prefix.apply(b.text, number),
+                    text = prefix.apply(b.text, number, customPrefix),
                     score = b.avgScore,
                     lines = b.lines.size,
-                    onCopy = { copyText(ctx, prefix.apply(b.text, number)) },
+                    onCopy = { copyText(ctx, prefix.apply(b.text, number, customPrefix)) },
                     onDelete = { hidden = hidden + (safeIdx to b.id) },
                 )
             }

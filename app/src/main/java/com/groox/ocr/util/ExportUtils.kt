@@ -9,20 +9,28 @@ import java.io.File
 /** Export bubble results as TXT (per-bubble) and JSON. */
 object ExportUtils {
 
-    /** Awalan baris yang bisa dipilih user, mis. "- halo". */
+    /** Awalan baris yang bisa dipilih/dicustom user, mis. "- halo" atau "1. halo". */
     enum class BubblePrefix(val label: String) {
         NONE("Tanpa awalan"),
         DASH("Strip  (- teks)"),
         BULLET("Bullet  (• teks)"),
         QUOTE("Kutip  (> teks)"),
-        NUMBERED("Nomor  (1. teks)"),
+        NUM_DOT("Nomor  (1. teks)"),
+        NUM_PAREN("Nomor  (1) teks)"),
+        NUM_BRACKET("Nomor  ((1) teks)"),
+        NUM_DASH("Nomor  (1 - teks)"),
+        CUSTOM("Custom (ketik sendiri)…"),
         ;
-        fun apply(text: String, number: Int): String = when (this) {
+        fun apply(text: String, number: Int, custom: String = "- "): String = when (this) {
             NONE -> text
             DASH -> "- $text"
             BULLET -> "• $text"
             QUOTE -> "> $text"
-            NUMBERED -> "$number. $text"
+            NUM_DOT -> "$number. $text"
+            NUM_PAREN -> "$number) $text"
+            NUM_BRACKET -> "($number) $text"
+            NUM_DASH -> "$number - $text"
+            CUSTOM -> custom + text
         }
     }
 
@@ -31,8 +39,9 @@ object ExportUtils {
         bubbles: List<BubbleGrouper.Bubble>,
         prefix: BubblePrefix = BubblePrefix.NONE,
         startNumber: Int = 1,
+        custom: String = "- ",
     ): String = bubbles.mapIndexed { i, b ->
-        prefix.apply(b.text, startNumber + i)
+        prefix.apply(b.text, startNumber + i, custom)
     }.joinToString("\n")
 
     fun resultToJson(result: OcrEngine.OcrResult): String {
@@ -75,10 +84,11 @@ object ExportUtils {
     fun batchBubblesToTxt(
         lists: List<List<BubbleGrouper.Bubble>>,
         prefix: BubblePrefix = BubblePrefix.NONE,
+        custom: String = "- ",
     ): String {
-        if (lists.size == 1) return bubblesToTxt(lists[0], prefix)
+        if (lists.size == 1) return bubblesToTxt(lists[0], prefix, 1, custom)
         return lists.mapIndexed { i, bs ->
-            "=== Gambar ${i + 1} ===\n" + bubblesToTxt(bs, prefix)
+            "=== Gambar ${i + 1} ===\n" + bubblesToTxt(bs, prefix, 1, custom)
         }.joinToString("\n")
     }
 
@@ -86,7 +96,8 @@ object ExportUtils {
     fun batchToTxt(
         results: List<OcrEngine.OcrResult>,
         prefix: BubblePrefix = BubblePrefix.NONE,
-    ): String = batchBubblesToTxt(results.map { it.bubbles }, prefix)
+        custom: String = "- ",
+    ): String = batchBubblesToTxt(results.map { it.bubbles }, prefix, custom)
 
     /** JSON array per-gambar (struktur tiap item = resultToJson). */
     fun batchToJson(results: List<OcrEngine.OcrResult>): String {

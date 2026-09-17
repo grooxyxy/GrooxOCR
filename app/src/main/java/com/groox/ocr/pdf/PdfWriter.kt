@@ -115,8 +115,11 @@ object PdfWriter {
         return out.toByteArray()
     }
 
+    // WAJIB Locale.US: di locale Indonesia koma desimal (2133,33) merusak PDF
+    // dan halaman jadi tidak fit. Titik desimal selalu benar di semua HP.
     private fun fmt(f: Float): String =
-        if (f == f.toInt().toFloat()) f.toInt().toString() else "%.2f".format(f)
+        if (f == f.toInt().toFloat()) f.toInt().toString()
+        else String.format(java.util.Locale.US, "%.2f", f)
 
     /**
      * Pecah JpegPage yang terlalu tinggi menjadi beberapa halaman penuh.

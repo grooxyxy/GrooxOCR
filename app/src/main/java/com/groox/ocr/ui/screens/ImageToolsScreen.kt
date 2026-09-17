@@ -260,6 +260,10 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
             if (wmMode == Watermark.Mode.SMART) {
                 item { QSlider("Jumlah per gambar", vm.wmCount.collectAsState().value, 1..6) { vm.wmCount.value = it } }
                 item {
+                    Drop("Posisi", Watermark.Anchor.entries.toList(), vm.wmAnchor.collectAsState().value,
+                        { it.label }, { vm.wmAnchor.value = it })
+                }
+                item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             checked = vm.wmAvoid.collectAsState().value,

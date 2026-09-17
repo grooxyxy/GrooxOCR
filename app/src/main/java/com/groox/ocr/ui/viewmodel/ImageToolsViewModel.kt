@@ -57,6 +57,7 @@ class ImageToolsViewModel : ViewModel() {
     val wmText = MutableStateFlow("GrooxOCR")
     val wmColorIdx = MutableStateFlow(0)
     val wmMode = MutableStateFlow(Watermark.Mode.SMART)
+    val wmAnchor = MutableStateFlow(Watermark.Anchor.AUTO)
     val wmBlend = MutableStateFlow(Watermark.Blend.NORMAL)
     val wmCount = MutableStateFlow(2)
     val wmSize = MutableStateFlow(14)
@@ -176,6 +177,7 @@ class ImageToolsViewModel : ViewModel() {
         rotation = wmRotation.value,
         marginPx = wmMargin.value,
         mode = wmMode.value,
+        anchor = wmAnchor.value,
         blend = wmBlend.value,
         avoidBubble = wmAvoid.value,
     )

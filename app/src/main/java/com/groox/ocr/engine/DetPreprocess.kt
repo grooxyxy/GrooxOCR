@@ -35,13 +35,15 @@ object DetPreprocess {
         val scale = detLongSide / longSide
         var rw = (sw * scale).toInt().coerceAtLeast(32)
         var rh = (sh * scale).toInt().coerceAtLeast(32)
-        // Cap short side to avoid extreme memory on weird panoramas.
-        val maxShort = 960
-        val shortSide = minOf(rw, rh)
-        if (shortSide > maxShort) {
-            val s2 = maxShort.toFloat() / shortSide
-            rw = (rw * s2).toInt()
-            rh = (rh * s2).toInt()
+        // Anggaran piksel: input raksasa (mis. tile 720×1600 di long-side 4000
+        // = 1800×4000) bisa OOM di HP. Batasi luas area, jaga aspek.
+        // 4 juta px ≈ 1340×2980 untuk tile manhwa — masih tajam.
+        val maxPix = 4_000_000L
+        val area = rw.toLong() * rh
+        if (area > maxPix) {
+            val s = kotlin.math.sqrt(maxPix.toDouble() / area)
+            rw = (rw * s).toInt().coerceAtLeast(32)
+            rh = (rh * s).toInt().coerceAtLeast(32)
         }
         val padW = ceil(rw / 32.0).toInt() * 32
         val padH = ceil(rh / 32.0).toInt() * 32

@@ -191,11 +191,20 @@ fun HomeScreen(
             labelOf = { it.label },
             onSelect = onReadingOrder,
         )
-        Text("Deteksi long-side: ${params.detLongSide}px (720-wide → 1280 pas)")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(960, 1280, 1536).forEach { v ->
-                OutlinedButton(onClick = { onDetLongSide(v) }) { Text("$v") }
-            }
+        Text("Deteksi long-side: ${params.detLongSide}px (maks model 4000px)")
+        ModeDropdown(
+            label = "Long-side deteksi",
+            options = listOf(960, 1280, 1536, 2048, 2560, 3200, 4000),
+            selected = params.detLongSide,
+            labelOf = { "$it px" },
+            onSelect = onDetLongSide,
+        )
+        if (params.detLongSide >= 2048) {
+            Text(
+                "≥2048px berat di memori (otomatis dibatasi ~4 juta px). " +
+                    "Bisa gagal di HP kentang — turunkan bila crash.",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         Text("Box threshold: ${"%.2f".format(params.boxThresh)}")
         Slider(
