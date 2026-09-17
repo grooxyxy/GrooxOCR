@@ -78,8 +78,12 @@ object Unwatermark {
             uris.forEachIndexed { idx, uri ->
                 onProgress(idx, uris.size)
                 val info = ImageTiling.probe(ctx, uri)
-                val full = decodeBitmap(ctx, uri, 1)
+                val raw = decodeBitmap(ctx, uri, 1)
                     ?: throw RuntimeException("Gambar ${idx + 1} gagal dibaca")
+                // setPixels butuh bitmap MUTABLE (hasil decode itu immutable).
+                val full = raw.copy(Bitmap.Config.ARGB_8888, true)
+                    ?: throw RuntimeException("Bitmap gagal")
+                raw.recycle()
                 try {
                     val pos = basePos(info.width, info.height, wm.width, wm.height, opts.anchor)
                     processInto(full, wm, pos.first + opts.offX, pos.second + opts.offY, opts)
@@ -110,8 +114,11 @@ object Unwatermark {
         val info = ImageTiling.probe(ctx, uri)
         var sample = 1
         while (info.width / (sample * 2) >= 720 && info.width > 0) sample *= 2
-        val bmp = decodeBitmap(ctx, uri, sample)
+        val raw = decodeBitmap(ctx, uri, sample)
             ?: throw RuntimeException("Pratinjau gagal")
+        // Canvas/setPixels butuh bitmap MUTABLE.
+        val bmp = raw.copy(Bitmap.Config.ARGB_8888, true) ?: throw RuntimeException("Bitmap gagal")
+        raw.recycle()
         val s = bmp.width.toFloat() / info.width
         if (wmUri == null) return bmp
         val wm = decodeBitmap(ctx, wmUri, 1) ?: return bmp

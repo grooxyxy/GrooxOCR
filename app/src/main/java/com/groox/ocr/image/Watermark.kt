@@ -84,7 +84,10 @@ object Watermark {
             val files = mutableListOf<File>()
             uris.forEachIndexed { idx, uri ->
                 onProgress(idx, uris.size)
-                val bmp = decodeFull(ctx, uri) ?: throw RuntimeException("Gambar ${idx + 1} gagal dibaca")
+                val raw = decodeFull(ctx, uri) ?: throw RuntimeException("Gambar ${idx + 1} gagal dibaca")
+                // Bitmap hasil decode itu IMMUTABLE → salin mutable sebelum digambar.
+                val bmp = raw.copy(Bitmap.Config.ARGB_8888, true) ?: throw RuntimeException("Bitmap gagal")
+                raw.recycle()
                 try {
                     drawOn(ctx, bmp, logo, opts, Random(System.currentTimeMillis() + idx))
                     val f = File(ctx.cacheDir, "tmp_wm_${System.currentTimeMillis()}_$idx.jpg")
@@ -115,7 +118,7 @@ object Watermark {
             ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
             var sample = 1
             while (bounds.outWidth / (sample * 2) >= 480 && bounds.outWidth > 0) sample *= 2
-            val bmp = ctx.contentResolver.openInputStream(uri)?.use {
+            val raw = ctx.contentResolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(
                     it, null,
                     BitmapFactory.Options().apply {
@@ -124,6 +127,8 @@ object Watermark {
                     },
                 )
             } ?: throw RuntimeException("Pratinjau gagal")
+            val bmp = raw.copy(Bitmap.Config.ARGB_8888, true) ?: throw RuntimeException("Bitmap gagal")
+            raw.recycle()
             drawOn(ctx, bmp, logo, opts, Random(7))
             return bmp
         } finally {
