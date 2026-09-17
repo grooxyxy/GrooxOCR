@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.groox.ocr.data.ImageTiling
 import com.groox.ocr.ui.screens.HomeScreen
 import com.groox.ocr.ui.screens.PdfScreen
 import com.groox.ocr.ui.screens.ResultScreen
@@ -69,8 +68,9 @@ class MainActivity : ComponentActivity() {
                             val uiState by vm.ui.collectAsState()
                             val modelState by vm.modelState.collectAsState()
                             val params by vm.params.collectAsState()
+                            val picked by vm.picked.collectAsState()
 
-                            val picker = rememberLauncherForActivityResult(
+                            val singlePicker = rememberLauncherForActivityResult(
                                 ActivityResultContracts.OpenDocument()
                             ) { uri: Uri? ->
                                 if (uri != null) {
@@ -79,35 +79,35 @@ class MainActivity : ComponentActivity() {
                                             uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                                         )
                                     } catch (_: Exception) {}
-                                    try {
-                                        val info = ImageTiling.probe(this@MainActivity, uri)
-                                        vm.pickImage(uri, info)
-                                    } catch (t: Throwable) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            t.message ?: "Gambar tidak valid",
-                                            Toast.LENGTH_LONG,
-                                        ).show()
+                                    vm.pickImages(this@MainActivity, listOf(uri))
+                                }
+                            }
+                            val multiPicker = rememberLauncherForActivityResult(
+                                ActivityResultContracts.OpenMultipleDocuments()
+                            ) { uris: List<Uri> ->
+                                if (uris.isNotEmpty()) {
+                                    for (u in uris) {
+                                        try {
+                                            contentResolver.takePersistableUriPermission(
+                                                u, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                            )
+                                        } catch (_: Exception) {}
                                     }
+                                    vm.pickImages(this@MainActivity, uris)
                                 }
                             }
 
                             when (val s = uiState) {
-                                is OcrUiState.Done -> ResultScreen(
-                                    uri = s.uri,
-                                    result = s.result,
-                                    onBack = {
-                                        try {
-                                            val info = ImageTiling.probe(this@MainActivity, s.uri)
-                                            vm.backToImage(s.uri, info)
-                                        } catch (_: Exception) { vm.cancel() }
-                                    },
+                                is OcrUiState.DoneBatch -> ResultScreen(
+                                    items = s.items,
+                                    onBack = { vm.backToList() },
                                     onCopyAll = { txt ->
                                         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("GrooxOCR", txt))
+                                        val n = s.items.sumOf { it.result.bubbles.size }
                                         Toast.makeText(
                                             this@MainActivity,
-                                            "Disalin (${s.result.bubbles.size} bubble)",
+                                            "Disalin ($n bubble, ${s.items.size} gambar)",
                                             Toast.LENGTH_SHORT,
                                         ).show()
                                     },
@@ -116,13 +116,19 @@ class MainActivity : ComponentActivity() {
                                     modelState = modelState,
                                     params = params,
                                     uiState = s,
+                                    picked = picked,
                                     onPickImage = {
-                                        picker.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+                                        singlePicker.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
                                     },
+                                    onPickImages = {
+                                        multiPicker.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+                                    },
+                                    onRemovePicked = { vm.removePicked(it) },
+                                    onClearPicked = { vm.clearPicked() },
                                     onInstallModels = {
                                         vm.installModels(params.recMode != com.groox.ocr.data.RecMode.V6_ONLY)
                                     },
-                                    onRun = { vm.runOcr(it) },
+                                    onRunBatch = { vm.runOcrBatch(this@MainActivity) },
                                     onRecMode = { vm.setRecMode(it) },
                                     onReadingOrder = { vm.setReadingOrder(it) },
                                     onDetLongSide = { vm.setDetLongSide(it) },

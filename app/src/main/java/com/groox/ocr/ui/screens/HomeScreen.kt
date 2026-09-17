@@ -32,12 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.groox.ocr.data.ImageTiling
 import com.groox.ocr.data.ModelManager
 import com.groox.ocr.data.OcrParams
 import com.groox.ocr.data.ReadingOrder
 import com.groox.ocr.data.RecMode
 import com.groox.ocr.ui.viewmodel.OcrUiState
+import com.groox.ocr.ui.viewmodel.PickedOcrImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,9 +45,13 @@ fun HomeScreen(
     modelState: ModelManager.ModelState,
     params: OcrParams,
     uiState: OcrUiState,
+    picked: List<PickedOcrImage>,
     onPickImage: () -> Unit,
+    onPickImages: () -> Unit,
+    onRemovePicked: (Uri) -> Unit,
+    onClearPicked: () -> Unit,
     onInstallModels: () -> Unit,
-    onRun: (Uri) -> Unit,
+    onRunBatch: () -> Unit,
     onRecMode: (RecMode) -> Unit,
     onReadingOrder: (ReadingOrder) -> Unit,
     onDetLongSide: (Int) -> Unit,
@@ -95,15 +99,58 @@ fun HomeScreen(
             }
         }
 
-        // ---- Image ----
-        val picked = uiState as? OcrUiState.ImagePicked
+        // ---- Images (multi) ----
         val working = uiState as? OcrUiState.Working
         val error = uiState as? OcrUiState.Error
-        OutlinedButton(onClick = onPickImage, modifier = Modifier.fillMaxWidth()) {
-            Text("Pilih gambar (JPG / PNG / WebP)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPickImage, modifier = Modifier.weight(1f)) {
+                Text("+ 1 gambar")
+            }
+            OutlinedButton(onClick = onPickImages, modifier = Modifier.weight(1f)) {
+                Text("+ banyak gambar")
+            }
         }
-        if (picked != null) {
-            ImageInfoCard(picked.info)
+        if (picked.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "${picked.size} gambar terpilih",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.TextButton(onClick = onClearPicked) {
+                    Text("Hapus semua")
+                }
+            }
+            picked.forEachIndexed { i, p ->
+                Card {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${i + 1}. ${p.info.width} × ${p.info.height}px",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "${p.info.mime ?: "?"} • ${formatBytes(p.info.byteSize)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        androidx.compose.material3.TextButton(onClick = { onRemovePicked(p.uri) }) {
+                            Text("✕")
+                        }
+                    }
+                }
+            }
+        } else {
+            Text(
+                "Belum ada gambar. Pilih 1 atau banyak gambar (JPG/PNG/WebP) — " +
+                    "OCR berjalan berurutan per gambar.",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         if (working != null) {
             Card {
@@ -158,32 +205,19 @@ fun HomeScreen(
             steps = 8,
         )
 
-        if (picked != null && working == null) {
+        if (picked.isNotEmpty() && working == null) {
             Button(
-                onClick = { onRun(picked.uri) },
+                onClick = onRunBatch,
                 enabled = modelState.primaryReady,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Jalankan OCR (per-bubble)")
+                Text("Jalankan OCR ${picked.size} gambar (per-bubble)")
             }
             if (!modelState.primaryReady) {
                 Text("Salin model dulu sebelum OCR.")
             }
         }
         Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun ImageInfoCard(info: ImageTiling.ImageInfo) {
-    Card {
-        Column(Modifier.padding(12.dp)) {
-            Text("${info.width} × ${info.height}px", style = MaterialTheme.typography.titleSmall)
-            Text("Tipe: ${info.mime ?: "?"} • ${formatBytes(info.byteSize)}")
-            if (info.height > 8000) {
-                Text("Strip panjang → diproses per-tile otomatis (aman OOM).")
-            }
-        }
     }
 }
 

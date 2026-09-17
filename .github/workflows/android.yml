@@ -60,11 +60,43 @@ jobs:
               print(f, sz)
           EOF
 
+      # ---- Release keystore (password 161105) ----
+      # Dibuat sekali per CI; file JKS ikut di-upload sebagai artefak agar BISA
+      # dipakai ulang (update APK butuh tanda tangan SAMA). Simpan salinannya
+      # di tempat aman — jangan commit ke repo publik!
+      - name: Generate release keystore
+        run: |
+          set -eux
+          mkdir -p keystore
+          if [ ! -f keystore/groox-release.jks ]; then
+            keytool -genkeypair \
+              -keystore keystore/groox-release.jks \
+              -alias groox -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass 161105 -keypass 161105 \
+              -dname "CN=GrooxOCR, OU=Groox, O=Groox, L=Jakarta, C=ID"
+          fi
+          keytool -list -keystore keystore/groox-release.jks -storepass 161105 | head -n 5
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
+
+      - name: Build release APK (signed, 161105)
+        run: gradle :app:assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: GrooxOCR-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GrooxOCR-release
+          path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload release keystore (simpan aman!)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GrooxOCR-release-keystore
+          path: keystore/groox-release.jks

@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,8 +19,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -30,21 +33,25 @@ import coil.compose.AsyncImage
 import com.groox.ocr.engine.BubbleGrouper
 import com.groox.ocr.engine.OcrEngine
 import com.groox.ocr.ui.components.OcrOverlay
+import com.groox.ocr.ui.viewmodel.BatchItem
 import com.groox.ocr.util.ExportUtils
 
 /**
- * Hasil OCR: preview + overlay bubble, daftar bubble (tap salin),
- * ekspor TXT/JSON per-bubble, bagikan.
+ * Hasil OCR batch: navigasi antar-gambar (‹ ›), preview + overlay bubble
+ * per gambar, daftar bubble (tap salin), salin/bagikan gabungan semua gambar.
  */
 @Composable
 fun ResultScreen(
-    uri: Uri,
-    result: OcrEngine.OcrResult,
+    items: List<BatchItem>,
     onBack: () -> Unit,
     onCopyAll: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
-    val allTxt = remember(result) { ExportUtils.bubblesToTxt(result.bubbles) }
+    var idx by remember { mutableIntStateOf(0) }
+    val safeIdx = idx.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+    val cur = items.getOrNull(safeIdx)
+    val results = remember(items) { items.map { it.result } }
+    val allTxt = remember(results) { ExportUtils.batchToTxt(results) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -64,54 +71,79 @@ fun ResultScreen(
                 }
             }
         }
-        item {
-            Card {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (items.size > 1) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = { idx = (safeIdx - 1).coerceAtLeast(0) },
+                        enabled = safeIdx > 0,
+                    ) { Text("‹ Sblm") }
                     Text(
-                        "${result.imageWidth}×${result.imageHeight} • " +
-                            "${result.lines.size} baris → ${result.bubbles.size} bubble • " +
-                            "${result.elapsedMs} ms",
-                        style = MaterialTheme.typography.bodySmall,
+                        "Gambar ${safeIdx + 1}/${items.size}",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
                     )
-                    // Preview fit-width; overlay diskala proporsional.
-                    val aspect = result.imageWidth.toFloat() / result.imageHeight.coerceAtLeast(1)
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(aspect.coerceIn(0.05f, 3f)),
-                    ) {
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        OcrOverlay(
-                            boxes = result.bubbles.map { it.rect },
-                            imageWidth = result.imageWidth,
-                            imageHeight = result.imageHeight,
-                        )
-                    }
+                    TextButton(
+                        onClick = { idx = (safeIdx + 1).coerceAtMost(items.size - 1) },
+                        enabled = safeIdx < items.size - 1,
+                    ) { Text("Berikut ›") }
                 }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { shareText(ctx, allTxt) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Bagikan TXT") }
-                OutlinedButton(
-                    onClick = { shareText(ctx, ExportUtils.resultToJson(result)) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Bagikan JSON") }
+        if (cur != null) {
+            item { ImageResultCard(item = cur) }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { shareText(ctx, allTxt) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Bagikan TXT") }
+                    OutlinedButton(
+                        onClick = { shareText(ctx, ExportUtils.batchToJson(results)) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Bagikan JSON") }
+                }
+            }
+            items(cur.result.bubbles, key = { it.id }) { b ->
+                BubbleCard(bubble = b)
+            }
+            if (cur.result.bubbles.isEmpty()) {
+                item { Text("Tidak ada teks terdeteksi. Coba turunkan box threshold ke 0.35.") }
             }
         }
-        items(result.bubbles, key = { it.id }) { b ->
-            BubbleCard(bubble = b)
-        }
-        if (result.bubbles.isEmpty()) {
-            item { Text("Tidak ada teks terdeteksi. Coba turunkan box threshold ke 0.35.") }
+    }
+}
+
+@Composable
+private fun ImageResultCard(item: BatchItem) {
+    val result: OcrEngine.OcrResult = item.result
+    Card {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "${result.imageWidth}×${result.imageHeight} • " +
+                    "${result.lines.size} baris → ${result.bubbles.size} bubble • " +
+                    "${result.elapsedMs} ms",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            // Preview fit-width; overlay diskala proporsional.
+            val aspect = result.imageWidth.toFloat() / result.imageHeight.coerceAtLeast(1)
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(aspect.coerceIn(0.05f, 3f)),
+            ) {
+                AsyncImage(
+                    model = item.uri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                OcrOverlay(
+                    boxes = result.bubbles.map { it.rect },
+                    imageWidth = result.imageWidth,
+                    imageHeight = result.imageHeight,
+                )
+            }
         }
     }
 }

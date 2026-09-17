@@ -4,7 +4,8 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
 
 - **Tab OCR**: **PP-OCRv6-small sebagai model utama** untuk komik strip panjang
   (720×16000 bahkan lebih), input **JPG / PNG / WebP**, output **per-bubble**
-  (bukan per-baris).
+  (bukan per-baris). **Pilih 1 atau banyak gambar** — OCR berjalan berurutan,
+  hasil per gambar bisa dijelajah (‹ ›) dan disalin/dibagikan gabungan.
 - **Tab PDF**: **gambar → PDF** (tiap gambar 1 halaman fit-width, JPEG asli
   ditempel tanpa re-encode → tetap tajam; strip panjang dipecah otomatis jadi
   halaman scrollable) + **kompres PDF** (render ulang per halaman). Full offline.
@@ -78,10 +79,19 @@ app/src/main/java/com/groox/ocr/
   util/ExportUtils.kt
 ```
 
-## Build
+## Build & rilis
 
-APK debug dibangun via GitHub Actions (`.github/workflows/android.yml`).
-Artefak: `app-debug.apk`. Atau lokal:
+APK debug + release dibangun via GitHub Actions (`.github/workflows/android.yml`).
+Artefak: `GrooxOCR-debug` (`app-debug.apk`), `GrooxOCR-release`
+(`app-release.apk`, signed), `GrooxOCR-release-keystore` (JKS).
+
+Rilis memakai keystore `keystore/groox-release.jks` (alias `groox`,
+store/key password `161105`, RSA-2048, 30 tahun) yang dibuat otomatis oleh CI.
+**Penting**: update APK butuh tanda tangan yang sama — unduh JKS dari artefak
+dan simpan aman; jangan commit ke repo publik. Override via env
+`KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD`.
+
+Lokal:
 
 ```bash
 ./gradlew :app:assembleDebug

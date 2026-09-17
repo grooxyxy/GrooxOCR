@@ -22,6 +22,21 @@ android {
         }
     }
 
+    // Release signing: keystore dibuat CI (keystore/ tidak di-commit).
+    // Password default 161105, bisa dioverride via env:
+    // KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD.
+    signingConfigs {
+        create("release") {
+            val ksFile = System.getenv("KEYSTORE_FILE")
+                ?.let { file(it) }
+                ?: rootProject.file("keystore/groox-release.jks")
+            storeFile = ksFile
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "161105"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "groox"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "161105"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -30,6 +45,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false

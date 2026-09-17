@@ -14,3 +14,5 @@ captures/
 # tapi JANGAN abaikan foldernya). Abaikan hanya file .onnx di mana pun.
 /**/*.onnx
 local.env
+# Release keystore JANGAN di-commit (berisi private key). CI membuatnya otomatis.
+keystore/

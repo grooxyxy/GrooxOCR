@@ -63,10 +63,10 @@ class OrtSessions : AutoCloseable {
     ): Pair<FloatArray, LongArray> {
         OnnxTensor.createTensor(env, data, shape).use { t ->
             session.run(Collections.singletonMap(inputName, t)).use { out ->
-                val tensor = out[0].value as OnnxTensor
-                @Suppress("UNCHECKED_CAST")
-                val arr = (tensor.floatBuffer.array() as? FloatArray)
-                    ?: tensorToFloatArray(tensor)
+                // Result.get(int) SUDAH mengembalikan OnnxValue (tensor itu sendiri).
+                // Jangan panggil .value (itu isi data mentah → ClassCastException).
+                val tensor = firstTensor(session, out, "deteksi")
+                val arr = tensorToFloatArray(tensor)
                 return arr to tensor.info.shape
             }
         }
@@ -81,10 +81,9 @@ class OrtSessions : AutoCloseable {
     ): RecLogits {
         OnnxTensor.createTensor(env, data, shape).use { t ->
             session.run(Collections.singletonMap(inputName, t)).use { out ->
-                val tensor = out[0].value as OnnxTensor
+                val tensor = firstTensor(session, out, "rekognisi")
                 val shapeOut = tensor.info.shape // [1,T,C]
-                val arr = tensor.floatBuffer.array() as? FloatArray
-                    ?: tensorToFloatArray(tensor)
+                val arr = tensorToFloatArray(tensor)
                 val tDim = shapeOut[1].toInt()
                 val cDim = shapeOut[2].toInt()
                 return RecLogits(arr, tDim, cDim)
@@ -92,6 +91,30 @@ class OrtSessions : AutoCloseable {
         }
     }
 
+    /** Ambil tensor output pertama: coba via nama output, fallback via indeks. */
+    private fun firstTensor(
+        session: OrtSession,
+        out: OrtSession.Result,
+        tag: String,
+    ): OnnxTensor {
+        for (name in session.outputNames) {
+            try {
+                val opt = out.get(name)
+                if (opt.isPresent) {
+                    val v = opt.get()
+                    if (v is OnnxTensor) return v
+                }
+            } catch (_: Exception) {}
+        }
+        if (out.size() > 0) {
+            val v = out.get(0)
+            if (v is OnnxTensor) return v
+            throw RuntimeException("Output $tag bukan tensor: ${v.type}")
+        }
+        throw RuntimeException("Model $tag tidak mengembalikan output")
+    }
+
+    /** Salin aman (floatBuffer bisa direct → .array() melempar). */
     private fun tensorToFloatArray(t: OnnxTensor): FloatArray {
         val buf = t.floatBuffer
         val out = FloatArray(buf.remaining())

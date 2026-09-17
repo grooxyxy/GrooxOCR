@@ -46,6 +46,22 @@ object ExportUtils {
         return sb.toString()
     }
 
+    /** Gabungan banyak gambar: tiap gambar diberi header "=== Gambar i ===". */
+    fun batchToTxt(results: List<OcrEngine.OcrResult>): String =
+        results.mapIndexed { i, r ->
+            "=== Gambar ${i + 1} ===\n" + bubblesToTxt(r.bubbles)
+        }.joinToString("\n\n")
+
+    /** JSON array per-gambar (struktur tiap item = resultToJson). */
+    fun batchToJson(results: List<OcrEngine.OcrResult>): String {
+        // Bungkus tiap objek resultToJson ke dalam "images".
+        // resultToJson mengembalikan objek {...}; sisipkan "index" setelah kurung buka.
+        val items = results.mapIndexed { i, r ->
+            resultToJson(r).replaceFirst("{", "{\"index\":$i,")
+        }
+        return "{\"count\":${results.size},\"images\":[${items.joinToString(",")}]}"
+    }
+
     private fun jsonStr(s: String): String {
         val sb = StringBuilder("\"")
         for (c in s) {
