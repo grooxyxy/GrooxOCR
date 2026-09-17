@@ -16,6 +16,8 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
   custom, output JPG + ZIP), **pisah vertikal** (jumlah/tinggi custom),
   **smart watermark** (teks/logo, hindari area ramai & bubble, pratinjau).
   Full offline.
+- **Tab Terjemah**: offline (MarianMT INT8) — ketik/paste atau file TXT.
+  KO→EN, EN→ID, KO→ID (rantai). Salin/bagikan/simpan TXT.
 
 ## Arsitektur model
 

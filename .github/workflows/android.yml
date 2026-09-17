@@ -88,6 +88,37 @@ jobs:
           fi
           keytool -list -keystore keystore/groox-release.jks -storepass 161105 | head -n 5
 
+      # ---- Model terjemahan MarianMT INT8 (Xenova, dibundel ke APK) ----
+      # ko-en + en-id (ko-id = rantai keduanya). Tanpa unduhan runtime.
+      - name: Download MT INT8 models into assets
+        run: |
+          set -eux
+          mkdir -p app/src/main/assets/mt/ko-en app/src/main/assets/mt/en-id
+          curl -fL -o app/src/main/assets/mt/ko-en/encoder_int8.onnx \
+            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/encoder_model_int8.onnx
+          curl -fL -o app/src/main/assets/mt/ko-en/decoder_merged_int8.onnx \
+            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/decoder_model_merged_int8.onnx
+          curl -fL -o app/src/main/assets/mt/ko-en/tokenizer.json \
+            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/tokenizer.json
+          curl -fL -o app/src/main/assets/mt/en-id/encoder_int8.onnx \
+            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/encoder_model_int8.onnx
+          curl -fL -o app/src/main/assets/mt/en-id/decoder_merged_int8.onnx \
+            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/decoder_model_merged_int8.onnx
+          curl -fL -o app/src/main/assets/mt/en-id/tokenizer.json \
+            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/tokenizer.json
+          ls -la app/src/main/assets/mt/ko-en app/src/main/assets/mt/en-id
+          python3 - <<'EOF'
+          import os
+          for d in ["app/src/main/assets/mt/ko-en", "app/src/main/assets/mt/en-id"]:
+              for f, lo in [("encoder_int8.onnx", 5_000_000),
+                            ("decoder_merged_int8.onnx", 5_000_000),
+                            ("tokenizer.json", 100_000)]:
+                  p = os.path.join(d, f)
+                  sz = os.path.getsize(p)
+                  assert sz > lo, f"{p} too small: {sz}"
+                  print(p, sz)
+          EOF
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 

@@ -31,11 +31,13 @@ import com.groox.ocr.ui.screens.HomeScreen
 import com.groox.ocr.ui.screens.ImageToolsScreen
 import com.groox.ocr.ui.screens.PdfScreen
 import com.groox.ocr.ui.screens.ResultScreen
+import com.groox.ocr.ui.screens.TranslateScreen
 import com.groox.ocr.ui.theme.GrooxTheme
 import com.groox.ocr.ui.viewmodel.OcrUiState
 import com.groox.ocr.ui.viewmodel.ImageToolsViewModel
 import com.groox.ocr.ui.viewmodel.OcrViewModel
 import com.groox.ocr.ui.viewmodel.PdfViewModel
+import com.groox.ocr.ui.viewmodel.TranslateViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -50,6 +52,7 @@ class MainActivity : ComponentActivity() {
                         OcrViewModel(app.modelManager, app.ocrEngine) as T
                     PdfViewModel::class.java -> PdfViewModel() as T
                     ImageToolsViewModel::class.java -> ImageToolsViewModel() as T
+                    TranslateViewModel::class.java -> TranslateViewModel(app.translator) as T
                     else -> throw IllegalArgumentException(modelClass.name)
                 }
             }
@@ -67,7 +70,8 @@ class MainActivity : ComponentActivity() {
                             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("OCR") })
                             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("PDF") })
                             Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Gambar") })
-                            Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Donasi") })
+                            Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Terjemah") })
+                            Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text("Donasi") })
                         }
                         if (tab == 0) {
                             val vm: OcrViewModel = viewModel(factory = factory)
@@ -148,6 +152,9 @@ class MainActivity : ComponentActivity() {
                         } else if (tab == 2) {
                             val tvm: ImageToolsViewModel = viewModel(factory = factory)
                             ImageToolsScreen(vm = tvm)
+                        } else if (tab == 3) {
+                            val trvm: TranslateViewModel = viewModel(factory = factory)
+                            TranslateScreen(vm = trvm)
                         } else {
                             DonateScreen()
                         }
