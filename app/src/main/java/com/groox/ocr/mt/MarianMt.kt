@@ -123,7 +123,12 @@ class MarianMt(
         var token = tokenizer.padId // decoder_start_token_id = pad (Marian)
         var past: Map<String, FloatArray> = emptyMap()
         var pastShapes: Map<String, LongArray> = emptyMap()
-        repeat(maxNewTokens) {
+        // Langkah pertama: sebagian ekspor merged WAJIB past (isi nol),
+        // sebagian justru menolaknya → coba nol dulu, fallback tanpa past.
+        var triedZeroPast = false
+        var skipPastInputs = false
+        var step = 0
+        while (step < maxNewTokens) {
             val feeds = linkedMapOf<String, OnnxTensor>()
             try {
                 feeds[idName] = longTensor(longArrayOf(1, 1), listOf(token.toLong()))
@@ -137,33 +142,35 @@ class MarianMt(
                         longArrayOf(1, encLen.toLong()), List(encLen) { 1L }
                     )
                 }
-                for ((inp, _) in pastPairs) {
-                    val arr = past[inp]
-                    val shp = pastShapes[inp]
-                    if (arr != null && shp != null) {
-                        feeds[inp] = floatTensor(shp, arr)
-                    } else {
-                        // Langkah pertama: past = nol [1, heads, 1, headDim].
-                        // Bentuk pasti tak diketahui → lewati; kebanyakan ekspor
-                        // merged menerima tanpa past di langkah pertama.
+                if (!skipPastInputs) {
+                    for ((inp, _) in pastPairs) {
+                        val arr = past[inp]
+                        val shp = pastShapes[inp]
+                        if (arr != null && shp != null) {
+                            feeds[inp] = floatTensor(shp, arr)
+                        } else if (!triedZeroPast) {
+                            // Marian-base: 8 heads × 64 dim.
+                            feeds[inp] = floatTensor(longArrayOf(1, 8, 1, 64), FloatArray(8 * 64))
+                        }
                     }
                 }
-                dec.run(feeds).use { out ->
-                    val logitsT = out.get(logitsName).orElse(null) as? OnnxTensor
-                        ?: firstTensorFallback(out)
-                    val logits = tensorToFloatArray(logitsT)
-                    token = argmax(logits)
-                    result.add(token)
-                    val nextPast = mutableMapOf<String, FloatArray>()
-                    val nextShapes = mutableMapOf<String, LongArray>()
-                    for ((inp, o) in pastPairs) {
-                        val t = out.get(o).orElse(null) as? OnnxTensor ?: continue
-                        nextPast[inp] = tensorToFloatArray(t)
-                        nextShapes[inp] = t.info.shape
+                val stepOut: StepOut = try {
+                    runDecoderStep(dec, feeds, logitsName, pastPairs)
+                } catch (e: Exception) {
+                    if (!triedZeroPast && past.isEmpty()) {
+                        // Varian yang menolak past di langkah pertama → ulangi tanpa past.
+                        triedZeroPast = true
+                        skipPastInputs = true
+                        continue
                     }
-                    past = nextPast
-                    pastShapes = nextShapes
+                    throw e
                 }
+                triedZeroPast = true
+                token = stepOut.token
+                past = stepOut.past
+                pastShapes = stepOut.shapes
+                result.add(token)
+                step++
             } finally {
                 feeds.values.forEach { try { it.close() } catch (_: Exception) {} }
             }
@@ -173,6 +180,34 @@ class MarianMt(
             }
         }
         return result
+    }
+
+    private data class StepOut(
+        val token: Int,
+        val past: Map<String, FloatArray>,
+        val shapes: Map<String, LongArray>,
+    )
+
+    /** Satu langkah decoder greedy. */
+    private fun runDecoderStep(
+        dec: OrtSession,
+        feeds: Map<String, OnnxTensor>,
+        logitsName: String,
+        pastPairs: List<Pair<String, String>>,
+    ): StepOut {
+        dec.run(feeds).use { out ->
+            val logitsT = out.get(logitsName).orElse(null) as? OnnxTensor
+                ?: firstTensorFallback(out)
+            val token = argmax(tensorToFloatArray(logitsT))
+            val nextPast = mutableMapOf<String, FloatArray>()
+            val nextShapes = mutableMapOf<String, LongArray>()
+            for ((inp, o) in pastPairs) {
+                val t = out.get(o).orElse(null) as? OnnxTensor ?: continue
+                nextPast[inp] = tensorToFloatArray(t)
+                nextShapes[inp] = t.info.shape
+            }
+            return StepOut(token, nextPast, nextShapes)
+        }
     }
 
     private fun argmax(a: FloatArray): Int {
