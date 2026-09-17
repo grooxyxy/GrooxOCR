@@ -38,3 +38,14 @@ dialog). Kandidat skor terkecil yang saling berjauhan.
 Fitur: watermark TEKS (warna, pill, bayangan) atau LOGO, mode
 Smart/4-sudut/Tengah/Ubin-diagonal, blend Normal/Multiply/Screen,
 jumlah/ukuran/opasitas/rotasi/margin, pratinjau, output JPG + ZIP.
+
+## Unwatermark (`image/Unwatermark.kt`)
+
+Port setia `watermark remover html v1.4.0` (tidak diubah): posisi anchor +
+geser user (drag pratinjau / stepper ±1/±10px, presisi penuh), rumus
+reverse-blend B = (I − αW)/(1−α) dengan alpha-adjust + ambang transparan/opak,
+smoothing piksel opak, perataan whole-pixel & subpixel otomatis, smoothing
+tepi + brightness (termasuk faktor acak referensi). OOB berperilaku seperti
+JS (NaN → 0). Yang tidak diport: filter noise-JPEG (berbasis filter CSS
+canvas, default mati di referensi). Sampel watermark: WM Jjaptoon / WM Korea
+(link Drive di aplikasi). Output JPG + ZIP + rename + pratinjau Normal/Difference.

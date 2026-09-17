@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.groox.ocr.data.ImageTiling
 import com.groox.ocr.image.CombineImage
 import com.groox.ocr.image.SplitImage
+import com.groox.ocr.image.Unwatermark
 import com.groox.ocr.image.Watermark
 import com.groox.ocr.pdf.ZipKit
 import java.io.File
@@ -70,6 +71,26 @@ class ImageToolsViewModel : ViewModel() {
     private val _wmPreview = MutableStateFlow<Bitmap?>(null)
     val wmPreview: StateFlow<Bitmap?> = _wmPreview
 
+    // ---- unwatermark (port setia remover v1.4.0) ----
+    private val _uwImages = MutableStateFlow<List<ImgItem>>(emptyList())
+    val uwImages: StateFlow<List<ImgItem>> = _uwImages
+    val uwLogo = MutableStateFlow<Uri?>(null)
+    val uwAnchor = MutableStateFlow(Unwatermark.Anchor9.TR)
+    val uwOffX = MutableStateFlow(0f)
+    val uwOffY = MutableStateFlow(0f)
+    val uwAlpha = MutableStateFlow(100) // persen (100 = 1.0)
+    val uwTrans = MutableStateFlow(3)
+    val uwOpaque = MutableStateFlow(240)
+    val uwSmooth = MutableStateFlow(false)
+    val uwBright = MutableStateFlow(false)
+    val uwSub = MutableStateFlow(false)
+    val uwWholeR = MutableStateFlow(0)
+    val uwBlend = MutableStateFlow(Unwatermark.PreviewBlend.NORMAL)
+    val uwQ = MutableStateFlow(92)
+    val uwBase = MutableStateFlow("GrooxOCR_unwm")
+    private val _uwPreview = MutableStateFlow<Bitmap?>(null)
+    val uwPreview: StateFlow<Bitmap?> = _uwPreview
+
     private var job: Job? = null
 
     // ---------- daftar gambar ----------
@@ -107,14 +128,18 @@ class ImageToolsViewModel : ViewModel() {
     private fun current(t: String): List<ImgItem> = when (t) {
         "cb" -> _cbImages.value
         "sp" -> _spImages.value
+        "uw" -> _uwImages.value
         else -> _wmImages.value
     }
 
     private fun set(t: String, v: List<ImgItem>) = when (t) {
         "cb" -> _cbImages.value = v
         "sp" -> _spImages.value = v
+        "uw" -> _uwImages.value = v
         else -> _wmImages.value = v
     }
+
+    fun moveUw(i: Int, d: Int) = moveItem("uw", i, d)
 
     fun backToIdle() { _ui.value = ToolUi.Idle }
     fun cancel() { job?.cancel(); _ui.value = ToolUi.Idle }
@@ -218,11 +243,73 @@ class ImageToolsViewModel : ViewModel() {
         }
     }
 
+    // ---------- unwatermark ----------
+
+    fun uwOpts(): Unwatermark.Opts = Unwatermark.Opts(
+        anchor = uwAnchor.value,
+        offX = uwOffX.value,
+        offY = uwOffY.value,
+        alphaAdjust = uwAlpha.value / 100f,
+        transparencyThreshold = uwTrans.value,
+        opaqueThreshold = uwOpaque.value,
+        smoothEdges = uwSmooth.value,
+        adjustBrightness = uwBright.value && uwSmooth.value,
+        autoSubpixel = uwSub.value,
+        wholePxRadius = uwWholeR.value,
+    )
+
+    /** Geser posisi (px full-res). Dipakai drag pratinjau & stepper. */
+    fun shiftUw(dx: Float, dy: Float) {
+        uwOffX.value = (uwOffX.value + dx).coerceIn(-2000f, 2000f)
+        uwOffY.value = (uwOffY.value + dy).coerceIn(-2000f, 2000f)
+    }
+
+    fun nudgeUw(dx: Float, dy: Float) = shiftUw(dx, dy)
+
+    fun refreshUwPreview(ctx: Context) {
+        val first = _uwImages.value.firstOrNull() ?: return fail("Pilih gambar dulu")
+        val logo = uwLogo.value ?: return fail("Pilih sampel watermark dulu")
+        job?.cancel()
+        val app = ctx.applicationContext
+        job = viewModelScope.launch {
+            try {
+                _ui.value = ToolUi.Working("Pratinjau…", 0, 1)
+                _uwPreview.value?.recycle()
+                _uwPreview.value = Unwatermark.preview(app, first.uri, logo, uwOpts(), uwBlend.value)
+                _ui.value = ToolUi.Idle
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _ui.value = ToolUi.Error(t.message ?: t.toString())
+            }
+        }
+    }
+
+    fun runUnwatermark(ctx: Context) {
+        val uris = _uwImages.value.map { it.uri }
+        if (uris.isEmpty()) return fail("Pilih gambar dulu")
+        val logo = uwLogo.value ?: return fail("Pilih sampel watermark dulu")
+        job?.cancel()
+        val app = ctx.applicationContext
+        job = viewModelScope.launch {
+            try {
+                _ui.value = ToolUi.Working("Unwatermark…", 0, uris.size)
+                val r = Unwatermark.apply(app, uris, logo, uwOpts(), uwQ.value, uwBase.value) { d, t ->
+                    _ui.value = ToolUi.Working("Unwatermark… ($d/$t)", d, t)
+                }
+                _ui.value = ToolUi.Done("uw", ToolResult(r.images, r.zip, "${r.images.size} gambar"))
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _ui.value = ToolUi.Error(t.message ?: t.toString())
+            }
+        }
+    }
+
     // ---------- rename + resolve ----------
 
     private fun baseOf(kind: String): String = when (kind) {
         "combine" -> cbBase.value
         "split" -> spBase.value
+        "uw" -> uwBase.value
         else -> wmBase.value
     }
 
@@ -248,6 +335,7 @@ class ImageToolsViewModel : ViewModel() {
 
     override fun onCleared() {
         try { _wmPreview.value?.recycle() } catch (_: Exception) {}
+        try { _uwPreview.value?.recycle() } catch (_: Exception) {}
         super.onCleared()
     }
 }

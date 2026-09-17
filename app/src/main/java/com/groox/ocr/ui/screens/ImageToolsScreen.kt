@@ -1,9 +1,12 @@
 package com.groox.ocr.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,10 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.groox.ocr.image.Watermark
+import com.groox.ocr.image.Unwatermark
 import com.groox.ocr.pdf.PdfShare
 import com.groox.ocr.ui.viewmodel.ImageToolsViewModel
 import com.groox.ocr.ui.viewmodel.ImgItem
@@ -53,6 +58,17 @@ import java.io.File
 
 private val IMG_MIME = arrayOf("image/jpeg", "image/png", "image/webp")
 
+private const val WM_JJAPTOON =
+    "https://drive.google.com/drive/folders/1ZPAFYEdnS7V5eJeNP5AcrDDhJ1XjY6bk?usp=drive_link"
+private const val WM_KOREA =
+    "https://drive.google.com/drive/folders/17dWWAU0LzIUxjNn3p1JA5VqLZwSq7o_0?usp=drive_link"
+
+private fun openUrl(ctx: android.content.Context, url: String) {
+    try {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (_: Exception) {}
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImageToolsScreen(vm: ImageToolsViewModel) {
@@ -61,6 +77,7 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
     val cbImages by vm.cbImages.collectAsState()
     val spImages by vm.spImages.collectAsState()
     val wmImages by vm.wmImages.collectAsState()
+    val uwImages by vm.uwImages.collectAsState()
     val spByCount by vm.spByCount.collectAsState()
     val wmSource by vm.wmSource.collectAsState()
     val wmMode by vm.wmMode.collectAsState()
@@ -75,6 +92,12 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
     val pickWm = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> if (uris.isNotEmpty()) vm.addItems(ctx, "wm", uris) }
+    val pickUw = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> if (uris.isNotEmpty()) vm.addItems(ctx, "uw", uris) }
+    val pickUwLogo = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.uwLogo.value = uri }
     val pickLogo = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.wmLogo.value = uri }
@@ -308,6 +331,159 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
             }
         }
 
+        // ================= UNWATERMARK =================
+        item {
+            Text("Unwatermark", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Hapus watermark transparan memakai SAMPEL watermark-nya " +
+                    "(algoritma reverser v1.4.0, tidak diubah). Unduh sampel, " +
+                    "posisikan tepat (geser pratinjau / tombol ±), lalu proses. " +
+                    "Output JPG + ZIP.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { openUrl(ctx, WM_JJAPTOON) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("WM Jjaptoon") }
+                OutlinedButton(
+                    onClick = { openUrl(ctx, WM_KOREA) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("WM Korea") }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { pickUw.launch(IMG_MIME) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Pilih gambar") }
+                OutlinedButton(
+                    onClick = { vm.clearItems("uw") },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Bersihkan") }
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = { pickUwLogo.launch(arrayOf("image/png", "image/jpeg", "image/webp")) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (vm.uwLogo.collectAsState().value == null) "Pilih sampel watermark" else "Sampel ✓ (tap ganti)")
+            }
+        }
+        if (uwImages.isNotEmpty()) {
+            item { Text("${uwImages.size} gambar", style = MaterialTheme.typography.titleSmall) }
+            itemsIndexed(uwImages, key = { _, im -> "uw" + im.uri.toString() }) { i, im ->
+                ImgRow(i, im, uwImages.size, { vm.moveUw(it, -1) }, { vm.moveUw(it, 1) }, { vm.removeItem("uw", it) })
+            }
+            item {
+                Drop("Anchor awal", Unwatermark.Anchor9.entries.toList(), vm.uwAnchor.collectAsState().value,
+                    { it.label }, { vm.uwAnchor.value = it })
+            }
+            item {
+                val ox = vm.uwOffX.collectAsState().value
+                val oy = vm.uwOffY.collectAsState().value
+                Text("Geser posisi: X=${ox.toInt()}px  Y=${oy.toInt()}px")
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { vm.nudgeUw(-10f, 0f) }) { Text("◀10") }
+                    TextButton(onClick = { vm.nudgeUw(-1f, 0f) }) { Text("◀1") }
+                    TextButton(onClick = { vm.nudgeUw(1f, 0f) }) { Text("1▶") }
+                    TextButton(onClick = { vm.nudgeUw(10f, 0f) }) { Text("10▶") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { vm.nudgeUw(0f, -10f) }) { Text("▲10") }
+                    TextButton(onClick = { vm.nudgeUw(0f, -1f) }) { Text("▲1") }
+                    TextButton(onClick = { vm.nudgeUw(0f, 1f) }) { Text("1▼") }
+                    TextButton(onClick = { vm.nudgeUw(0f, 10f) }) { Text("10▼") }
+                }
+            }
+            item {
+                Drop("Pratinjau blend", Unwatermark.PreviewBlend.entries.toList(), vm.uwBlend.collectAsState().value,
+                    { it.label }, { vm.uwBlend.value = it })
+            }
+            item {
+                val prev = vm.uwPreview.collectAsState().value
+                OutlinedButton(onClick = { vm.refreshUwPreview(ctx) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Pratinjau posisi")
+                }
+                if (prev != null) {
+                    val fullW = uwImages.firstOrNull()?.w ?: prev.width
+                    val k = fullW.toFloat() / prev.width
+                    Image(
+                        bitmap = prev.asImageBitmap(),
+                        contentDescription = "Pratinjau unwatermark (geser untuk reposisi)",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(prev) {
+                                detectDragGestures { change, drag ->
+                                    change.consume()
+                                    vm.shiftUw(drag.x * k, drag.y * k)
+                                }
+                            },
+                    )
+                    Text(
+                        "Geser gambar pratinjau untuk reposisi (atau tombol ± di atas).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            item { QSlider("Alpha adjust (×100)", vm.uwAlpha.collectAsState().value, 50..150) { vm.uwAlpha.value = it } }
+            item { QSlider("Ambang transparan", vm.uwTrans.collectAsState().value, 0..50) { vm.uwTrans.value = it } }
+            item { QSlider("Ambang opak", vm.uwOpaque.collectAsState().value, 200..255) { vm.uwOpaque.value = it } }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = vm.uwSmooth.collectAsState().value,
+                        onCheckedChange = { vm.uwSmooth.value = it },
+                    )
+                    Text("Haluskan tepi")
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = vm.uwBright.collectAsState().value,
+                        onCheckedChange = { vm.uwBright.value = it },
+                    )
+                    Text("Sesuaikan brightness tepi")
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = vm.uwSub.collectAsState().value,
+                        onCheckedChange = { vm.uwSub.value = it },
+                    )
+                    Text("Perataan subpixel otomatis")
+                }
+            }
+            item {
+                Drop("Perataan whole-pixel", listOf(0, 2, 5, 10, 21), vm.uwWholeR.collectAsState().value,
+                    { if (it == 0) "Mati" else "Radius ${it}px" }, { vm.uwWholeR.value = it })
+            }
+            item { QSlider("Kualitas JPEG", vm.uwQ.collectAsState().value, 60..100) { vm.uwQ.value = it } }
+            item {
+                OutlinedTextField(
+                    value = vm.uwBase.collectAsState().value,
+                    onValueChange = { vm.uwBase.value = it.take(60) },
+                    label = { Text("Nama output") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                Button(onClick = { vm.runUnwatermark(ctx) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Hapus watermark (${uwImages.size} gambar)")
+                }
+            }
+        }
+
+        item { HorizontalDivider(); Spacer(Modifier.height(4.dp)) }
+
         // ================= HASIL =================
         when (val s = ui) {
             is ToolUi.Working -> item {
@@ -376,6 +552,7 @@ private fun ToolResultCard(vm: ImageToolsViewModel, kind: String, result: ToolRe
                 when (kind) {
                     "combine" -> "Gabung jadi ${result.images.size} file (${result.info})"
                     "split" -> "Pisah jadi ${result.images.size} potongan"
+                    "uw" -> "Unwatermark: ${result.info}"
                     else -> "Watermark: ${result.info}"
                 },
                 style = MaterialTheme.typography.titleSmall,
@@ -388,6 +565,7 @@ private fun ToolResultCard(vm: ImageToolsViewModel, kind: String, result: ToolRe
                     when (kind) {
                         "combine" -> vm.cbBase.value = it.take(60)
                         "split" -> vm.spBase.value = it.take(60)
+                        "uw" -> vm.uwBase.value = it.take(60)
                         else -> vm.wmBase.value = it.take(60)
                     }
                 },

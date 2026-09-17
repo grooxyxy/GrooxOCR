@@ -111,6 +111,9 @@ Lihat `docs/` untuk detail pipeline, tiling, dan bubble grouping.
 
 ## Lisensi
 
-Kode aplikasi MIT. Model PaddleOCR Apache-2.0 (milik Baidu/PaddlePaddle).
+Kode aplikasi MIT. Unwatermark port dari watermark remover v1.4.0 (browser).
+Model PaddleOCR Apache-2.0 (milik Baidu/PaddlePaddle).
 
 Channel utama: https://t.me/VasiliasPV — develop by @AnergiaPV.
+Sampel watermark: [WM Jjaptoon](https://drive.google.com/drive/folders/1ZPAFYEdnS7V5eJeNP5AcrDDhJ1XjY6bk?usp=drive_link) ·
+[WM Korea](https://drive.google.com/drive/folders/17dWWAU0LzIUxjNn3p1JA5VqLZwSq7o_0?usp=drive_link).

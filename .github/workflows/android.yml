@@ -61,9 +61,20 @@ jobs:
           EOF
 
       # ---- Release keystore (password 161105) ----
-      # Dibuat sekali per CI; file JKS ikut di-upload sebagai artefak agar BISA
-      # dipakai ulang (update APK butuh tanda tangan SAMA). Simpan salinannya
-      # di tempat aman — jangan commit ke repo publik!
+      # PENTING: pakai kembali keystore build sebelumnya agar tanda tangan SAMA
+      # (APK terinstall tidak perlu uninstall). Hanya bila tidak ada (build
+      # pertama) keystore baru dibuat. JKS ikut di-upload sebagai artefak
+      # cadangan — simpan salinannya di tempat aman, jangan commit ke repo!
+      - name: Restore previous release keystore
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: android.yml
+          branch: main
+          name: GrooxOCR-release-keystore
+          path: keystore/
+          if_no_artifact_found: warn
+
       - name: Generate release keystore
         run: |
           set -eux
