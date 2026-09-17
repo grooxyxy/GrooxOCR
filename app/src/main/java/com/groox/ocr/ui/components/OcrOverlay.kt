@@ -2,7 +2,7 @@ package com.groox.ocr.ui.components
 
 import android.graphics.RectF
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,7 +25,9 @@ fun OcrOverlay(
     showIndex: Boolean = false,
 ) {
     if (imageWidth <= 0 || imageHeight <= 0 || boxes.isEmpty()) return
-    Canvas(modifier = modifier.fillMaxWidth()) {
+    // fillMaxSize: Box pemanggil sudah berukuran aspek gambar; fillMaxWidth saja
+    // membuat tinggi Canvas 0 sehingga box tidak terlihat.
+    Canvas(modifier = modifier.fillMaxSize()) {
         val sx = size.width / imageWidth
         // Canvas height di caller sudah diatur proporsional; pakai sx untuk x & y.
         boxes.forEachIndexed { i, b ->

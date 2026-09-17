@@ -99,26 +99,35 @@ class Translator(private val appContext: Context) {
     ): String {
         val lines = text.replace("\r", "").split("\n")
         val total = lines.size.coerceAtLeast(1)
+        var firstError: Throwable? = null
         val out = lines.mapIndexed { i, ln ->
             onProgress(i, total)
-            if (ln.isBlank()) "" else translateLine(ln, dir)
+            if (ln.isBlank()) "" else try {
+                translateLine(ln, dir)
+            } catch (t: Throwable) {
+                if (firstError == null) firstError = t
+                Log.w("Translator", "gagal: $t")
+                ln // fallback per baris agar hasil tak hilang total
+            }
         }
         onProgress(total, total)
-        return out.joinToString("\n")
+        // Jika TAK ADA satu baris pun yang berubah, hampir pasti model gagal
+        // total (bukan "tidak perlu diterjemahkan") → tampilkan penyebab asli
+        // alih-alih diam-diam mengembalikan teks Korea.
+        val joined = out.joinToString("\n")
+        if (firstError != null && joined == text.replace("\r", "")) {
+            throw RuntimeException("Translate gagal: ${firstError!!.message}", firstError)
+        }
+        return joined
     }
 
     private fun translateLine(ln: String, dir: Direction): String {
-        return try {
-            // Pecah baris super-panjang per ±60 kata agar muat konteks 512.
-            val words = ln.trim().split(Regex("\\s+"))
-            if (words.size <= 60) {
-                one(ln, dir)
-            } else {
-                words.chunked(60).joinToString(" ") { one(it.joinToString(" "), dir) }
-            }
-        } catch (t: Throwable) {
-            Log.w("Translator", "gagal: $t")
-            ln // fallback: kembalikan asli daripada kosong
+        // Pecah baris super-panjang per ±60 kata agar muat konteks 512.
+        val words = ln.trim().split(Regex("\\s+"))
+        if (words.size <= 60) {
+            return one(ln, dir)
+        } else {
+            return words.chunked(60).joinToString(" ") { one(it.joinToString(" "), dir) }
         }
     }
 

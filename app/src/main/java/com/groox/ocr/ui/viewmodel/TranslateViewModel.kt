@@ -51,6 +51,15 @@ class TranslateViewModel(private val translator: Translator) : ViewModel() {
         _ui.value = TranslateUi.Idle
     }
 
+    /** Isi contoh sesuai arah + langsung terjemahkan (diagnosis cepat). */
+    fun quickTest() {
+        _input.value = when (_dir.value) {
+            Translator.Direction.EN_ID -> "Hello, how are you today?"
+            else -> "안녕하세요, 오늘 날씨가 좋네요"
+        }
+        translate()
+    }
+
     fun backToEdit() { _ui.value = TranslateUi.Idle }
 
     fun translate() {

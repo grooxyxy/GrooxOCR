@@ -180,6 +180,10 @@ fun TranslateScreen(vm: TranslateViewModel) {
                 Button(onClick = { vm.translate() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Terjemahkan")
                 }
+                OutlinedButton(
+                    onClick = { vm.quickTest() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Tes cepat (contoh kalimat)") }
             }
         }
         Spacer(Modifier.height(24.dp))
