@@ -1,0 +1,61 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      # ---- Model dibundel ke APK saat build (tanpa unduhan runtime) ----
+      # PP-OCRv6-small = utama (det + rec). Korea v5-mobile = pendamping Hangul.
+      - name: Download ONNX models into assets
+        run: |
+          set -eux
+          mkdir -p app/src/main/assets/models
+          cd app/src/main/assets/models
+          curl -fL -o ppocrv6_small_det.onnx \
+            https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx
+          curl -fL -o ppocrv6_small_rec.onnx \
+            https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx
+          curl -fL -o korean_v5_mobile_rec.onnx \
+            https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx
+          ls -la
+          python3 - <<'EOF'
+          import os
+          for f, lo in [("ppocrv6_small_det.onnx", 5_000_000),
+                        ("ppocrv6_small_rec.onnx", 10_000_000),
+                        ("korean_v5_mobile_rec.onnx", 5_000_000)]:
+              sz = os.path.getsize(f)
+              assert sz > lo, f"{f} too small: {sz}"
+              print(f, sz)
+          EOF
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GrooxOCR-debug
+          path: app/build/outputs/apk/debug/app-debug.apk

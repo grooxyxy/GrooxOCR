@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+# Model ONNX diunduh CI ke app/src/main/assets/models/ (jangan commit binernya,
+# tapi JANGAN abaikan foldernya). Abaikan hanya file .onnx di mana pun.
+/**/*.onnx
+local.env

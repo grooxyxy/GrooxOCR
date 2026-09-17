@@ -1,0 +1,84 @@
+# GrooxOCR — PP-OCRv6-small Manhwa/Manga OCR for Android
+
+APK OCR mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan
+**PP-OCRv6-small sebagai model utama** untuk komik strip panjang
+(720×16000 bahkan lebih), input **JPG / PNG / WebP**, output **per-bubble**
+(bukan per-baris).
+
+## Arsitektur model
+
+| Peran | Model | Ukuran ONNX | Bahasa |
+|---|---|---|---|
+| Deteksi (utama) | `PP-OCRv6_small_det` (ONNX) | ~9.8 MB | language-agnostic |
+| Rekognisi (utama) | `PP-OCRv6_small_rec` (ONNX) | ~21 MB | EN + ZH-CN + ZH-TW + JA + 46 Latin |
+| Rekognisi (pendamping Korea) | `korean_PP-OCRv5_mobile_rec` (ONNX) | ~13.4 MB | KO + EN |
+
+> Fakta penting: dict `PP-OCRv6_small_rec` (18.708 karakter) **tidak mengandung
+> Hangul** (0 karakter 가–힣). Diskusi resmi PaddleOCR (#18249) juga
+> mengonfirmasi Korea belum termasuk dalam 50 bahasa v6 dan workaround resmi
+> adalah **det v6 + rec `korean_PP-OCRv5_mobile_rec`**. Karena itu repo ini
+> memakai **v6-small sebagai utama** persis seperti permintaan, plus modul
+> Korea v5-mobile **hanya untuk Hangul**. Tanpa modul ini, manhwa Korea tidak
+> akan terbaca.
+
+Sumber model (diunduh OTOMATIS oleh GitHub Action ke `assets/models/`
+sebelum build — ter-bundel di APK, tanpa unduhan runtime, tanpa internet):
+
+- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
+- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
+- https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx
+
+Dict dibundel di `app/src/main/assets/`:
+`dict_v6_small.txt` (18.708), `dict_korean_v5.txt` (11.945).
+
+## Fitur utama
+
+- **Long-strip tiling**: `BitmapRegionDecoder` + tile 720×1600 overlap 200px,
+  offset global, NMS lintas-tile. Tidak pernah memuat 720×16000 penuh
+  (~46 MB ARGB) sekaligus → aman dari OOM.
+- **Deteksi DBNet v6**: resize `limit_side` (960/1280/1536), normalize
+  ImageNet, pad kelipatan 32, postprocess `DBPostProcess`
+  (`thresh=0.2`, `box_thresh=0.5`, `unclip_ratio=1.4`).
+- **Rekognisi CTC**: crop per-box, resize tinggi 48 jaga rasio
+  (`(x/255-0.5)/0.5`), decode greedy + skor rata-rata.
+- **Dual-recognizer + routing bahasa**: mode `V6_ONLY`, `KOREAN_ONLY`,
+  `AUTO` (default). `AUTO` menjalankan v6 + korean dan memilih skor
+  tertinggi per-box; jika teks mengandung Hangul, otomatis menang korean.
+- **Bubble grouping** (`BubbleGrouper`, union-find): dilasi box
+  (12px / 8% tinggi), gabung komponen bersentuhan, urut baca
+  top-to-bottom (+ left-to-right / right-to-left untuk manga),
+  gabung teks per-bubble dengan spasi/newline.
+- **UI Compose**: pilih gambar (SAF, jpg/png/webp), salin model dari APK
+  dengan progres, atur bahasa/deteksi/bubble, overlay box, daftar bubble
+  (tap → copy), ekspor TXT/JSON, share. Full offline.
+- **ONNX Runtime Android**: `onnxruntime-android:1.22.0`, 4 thread CPU,
+  coba NNAPI lalu fallback CPU, fp32.
+
+## Struktur
+
+```
+app/src/main/java/com/groox/ocr/
+  MainActivity.kt, GrooxOcrApp.kt
+  data/ModelManager.kt, OcrModels.kt, ImageTiling.kt
+  engine/OrtSessions.kt, DetPreprocess.kt, DetPostprocess.kt,
+         RecPreprocess.kt, CtcDecoder.kt, DictLoader.kt,
+         BubbleGrouper.kt, OcrEngine.kt
+  ui/theme/*, ui/screens/HomeScreen.kt, ui/screens/ResultScreen.kt,
+  ui/components/*, ui/viewmodel/OcrViewModel.kt
+  util/ImageUtils.kt, ExportUtils.kt
+```
+
+## Build
+
+APK debug dibangun via GitHub Actions (`.github/workflows/android.yml`).
+Artefak: `app-debug.apk`. Atau lokal:
+
+```bash
+./gradlew :app:assembleDebug
+```
+
+Lihat `docs/` untuk detail pipeline, tiling, dan bubble grouping.
+
+## Lisensi
+
+Kode aplikasi MIT. Model PaddleOCR Apache-2.0 (milik Baidu/PaddlePaddle).
