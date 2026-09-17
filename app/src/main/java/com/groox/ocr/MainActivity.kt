@@ -28,10 +28,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.groox.ocr.ui.screens.DonateScreen
 import com.groox.ocr.ui.screens.HomeScreen
+import com.groox.ocr.ui.screens.ImageToolsScreen
 import com.groox.ocr.ui.screens.PdfScreen
 import com.groox.ocr.ui.screens.ResultScreen
 import com.groox.ocr.ui.theme.GrooxTheme
 import com.groox.ocr.ui.viewmodel.OcrUiState
+import com.groox.ocr.ui.viewmodel.ImageToolsViewModel
 import com.groox.ocr.ui.viewmodel.OcrViewModel
 import com.groox.ocr.ui.viewmodel.PdfViewModel
 
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
                     OcrViewModel::class.java ->
                         OcrViewModel(app.modelManager, app.ocrEngine) as T
                     PdfViewModel::class.java -> PdfViewModel() as T
+                    ImageToolsViewModel::class.java -> ImageToolsViewModel() as T
                     else -> throw IllegalArgumentException(modelClass.name)
                 }
             }
@@ -63,7 +66,8 @@ class MainActivity : ComponentActivity() {
                         TabRow(selectedTabIndex = tab) {
                             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("OCR") })
                             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("PDF") })
-                            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Donasi") })
+                            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Gambar") })
+                            Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Donasi") })
                         }
                         if (tab == 0) {
                             val vm: OcrViewModel = viewModel(factory = factory)
@@ -141,6 +145,9 @@ class MainActivity : ComponentActivity() {
                         } else if (tab == 1) {
                             val pvm: PdfViewModel = viewModel(factory = factory)
                             PdfScreen(vm = pvm)
+                        } else if (tab == 2) {
+                            val tvm: ImageToolsViewModel = viewModel(factory = factory)
+                            ImageToolsScreen(vm = tvm)
                         } else {
                             DonateScreen()
                         }

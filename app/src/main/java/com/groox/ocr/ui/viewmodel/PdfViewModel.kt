@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.groox.ocr.data.ImageTiling
 import com.groox.ocr.pdf.ImageToPdf
 import com.groox.ocr.pdf.PdfCompressor
+import com.groox.ocr.pdf.PdfToJpg
+import com.groox.ocr.pdf.ZipKit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +22,7 @@ sealed interface PdfUiState {
     data class Working(val stage: String, val done: Int, val total: Int) : PdfUiState
     data class ConvertDone(val result: ImageToPdf.Result) : PdfUiState
     data class CompressDone(val result: PdfCompressor.Result) : PdfUiState
+    data class ToJpgDone(val result: PdfToJpg.Result) : PdfUiState
     data class Error(val message: String) : PdfUiState
 }
 
@@ -40,11 +43,25 @@ class PdfViewModel : ViewModel() {
     private val _level = MutableStateFlow(PdfCompressor.Level.MEDIUM)
     val level: StateFlow<PdfCompressor.Level> = _level
 
+    private val _render = MutableStateFlow(PdfToJpg.Render.TAJAM)
+    val render: StateFlow<PdfToJpg.Render> = _render
+
+    /** Password kunci PDF (kosong = tanpa kunci). */
+    private val _lockPass = MutableStateFlow("")
+    val lockPass: StateFlow<String> = _lockPass
+
+    /** Nama file output (tanpa ekstensi) — semua output bisa di-rename. */
+    private val _nameBase = MutableStateFlow("GrooxOCR")
+    val nameBase: StateFlow<String> = _nameBase
+
     private var job: Job? = null
 
     fun setQuality(q: ImageToPdf.Quality) { _quality.value = q }
     fun setPageWidth(p: ImageToPdf.PageWidth) { _pageWidth.value = p }
     fun setLevel(l: PdfCompressor.Level) { _level.value = l }
+    fun setRender(r: PdfToJpg.Render) { _render.value = r }
+    fun setLockPass(s: String) { _lockPass.value = s.take(64) }
+    fun setNameBase(s: String) { _nameBase.value = s.take(60) }
 
     fun addImages(ctx: Context, uris: List<Uri>) {
         val cur = _images.value.toMutableList()
@@ -99,9 +116,13 @@ class PdfViewModel : ViewModel() {
         job = viewModelScope.launch {
             try {
                 _ui.value = PdfUiState.Working("Membuat PDF…", 0, uris.size)
-                val r = ImageToPdf.convert(appCtx, uris, _quality.value, _pageWidth.value) { d, t ->
+                val r = ImageToPdf.convert(
+                    appCtx, uris, _quality.value, _pageWidth.value,
+                    _lockPass.value.ifBlank { null },
+                ) { d, t ->
                     _ui.value = PdfUiState.Working("Membuat PDF… ($d/$t)", d, t)
                 }
+                _nameBase.value = r.file.nameWithoutExtension
                 _ui.value = PdfUiState.ConvertDone(r)
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
@@ -116,15 +137,67 @@ class PdfViewModel : ViewModel() {
         job = viewModelScope.launch {
             try {
                 _ui.value = PdfUiState.Working("Mengompres PDF…", 0, 1)
-                val r = PdfCompressor.compress(appCtx, pdfUri, _level.value) { d, t ->
+                val r = PdfCompressor.compress(
+                    appCtx, pdfUri, _level.value,
+                    _lockPass.value.ifBlank { null },
+                ) { d, t ->
                     _ui.value = PdfUiState.Working("Render halaman $d/$t…", d, t)
                 }
+                _nameBase.value = r.file.nameWithoutExtension
                 _ui.value = PdfUiState.CompressDone(r)
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 _ui.value = PdfUiState.Error(t.message ?: t.toString())
             }
         }
+    }
+
+    fun pdfToJpg(ctx: Context, pdfUri: Uri) {
+        job?.cancel()
+        val appCtx = ctx.applicationContext
+        job = viewModelScope.launch {
+            try {
+                _ui.value = PdfUiState.Working("PDF → JPG…", 0, 1)
+                val r = PdfToJpg.convert(
+                    appCtx, pdfUri, _render.value,
+                    _nameBase.value.ifBlank { "GrooxOCR_pdf_jpg" },
+                ) { d, t ->
+                    _ui.value = PdfUiState.Working("Render halaman $d/$t…", d, t)
+                }
+                _nameBase.value = r.zip.nameWithoutExtension
+                _ui.value = PdfUiState.ToJpgDone(r)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _ui.value = PdfUiState.Error(t.message ?: t.toString())
+            }
+        }
+    }
+
+    /** Terapkan nama terbaru ke file hasil PDF (rename fisik). */
+    fun resolvePdfFile(f: File): File {
+        val renamed = ZipKit.ensureName(f, _nameBase.value.ifBlank { "GrooxOCR" })
+        // Segarkan state agar nama konsisten.
+        when (val s = _ui.value) {
+            is PdfUiState.ConvertDone ->
+                if (s.result.file.absolutePath != renamed.absolutePath)
+                    _ui.value = PdfUiState.ConvertDone(s.result.copy(file = renamed))
+            is PdfUiState.CompressDone ->
+                if (s.result.file.absolutePath != renamed.absolutePath)
+                    _ui.value = PdfUiState.CompressDone(s.result.copy(file = renamed))
+            else -> {}
+        }
+        return renamed
+    }
+
+    /** Terapkan nama terbaru ke hasil PDF→JPG (file + ZIP ulang bila berubah). */
+    fun resolveJpg(r: PdfToJpg.Result): PdfToJpg.Result {
+        val base = ZipKit.sanitize(_nameBase.value.ifBlank { "GrooxOCR_pdf_jpg" })
+        if (r.zip.nameWithoutExtension == base) return r
+        val named = ZipKit.ensureBaseNames(r.images.filter { it.exists() }, base)
+        val zip = ZipKit.zip(named, File(named.firstOrNull()?.parentFile, "$base.zip"))
+        val next = r.copy(images = named, zip = zip)
+        if (_ui.value is PdfUiState.ToJpgDone) _ui.value = PdfUiState.ToJpgDone(next)
+        return next
     }
 
     fun cancel() { job?.cancel(); _ui.value = PdfUiState.Idle }

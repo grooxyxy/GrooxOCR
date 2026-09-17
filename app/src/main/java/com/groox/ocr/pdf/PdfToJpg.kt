@@ -9,33 +9,28 @@ import android.os.ParcelFileDescriptor
 import java.io.File
 
 /**
- * Kompres PDF yang sudah ada — full offline tanpa dependensi.
- * Tiap halaman di-render via framework [PdfRenderer] pada lebar target,
- * lalu dibangun ulang sebagai PDF JPEG (fit-width, bisa di-scroll).
- * Efektif untuk PDF hasil scan/komik yang bengkak.
+ * PDF → JPG per halaman (full offline via framework PdfRenderer).
+ * Output: file-file JPG + ZIP-nya; semuanya bisa di-rename.
  */
-object PdfCompressor {
+object PdfToJpg {
 
-    enum class Level(val label: String, val width: Int, val jpegQ: Int) {
-        LIGHT("Ringan (1080px, q85)", 1080, 85),
-        MEDIUM("Sedang (720px, q75)", 720, 75),
-        STRONG("Kuat (720px, q60)", 720, 60),
+    enum class Render(val label: String, val width: Int, val jpegQ: Int) {
+        HEMAT("Hemat (720px, q75)", 720, 75),
+        TAJAM("Tajam (1080px, q90)", 1080, 90),
+        ASLI("Besar (1440px, q95)", 1440, 95),
     }
 
     data class Result(
-        val file: File,
-        val outBytes: Long,
-        val inBytes: Long,
+        val images: List<File>,
+        val zip: File,
         val pages: Int,
-    ) {
-        val ratio: Float get() = if (inBytes <= 0) 0f else outBytes.toFloat() / inBytes
-    }
+    )
 
-    suspend fun compress(
+    suspend fun convert(
         ctx: Context,
         pdfUri: Uri,
-        level: Level,
-        password: String? = null,
+        render: Render,
+        baseName: String,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Result {
         var pfd: ParcelFileDescriptor? = null
@@ -46,28 +41,22 @@ object PdfCompressor {
             renderer = PdfRenderer(pfd)
             val count = renderer.pageCount
             require(count > 0) { "PDF kosong" }
-            val inBytes = ctx.contentResolver.openInputStream(pdfUri)?.use {
-                it.readBytes().size.toLong()
-            } ?: -1L
-
-            val pages = mutableListOf<PdfWriter.JpegPage>()
-            val pageWpt = level.width.toFloat()
+            val base = ZipKit.sanitize(baseName, "GrooxOCR_pdf_jpg")
+            val files = mutableListOf<File>()
             for (i in 0 until count) {
                 onProgress(i, count)
                 val page = renderer.openPage(i)
                 try {
-                    val scale = level.width.toFloat() / page.width
-                    val rw = level.width
+                    val scale = render.width.toFloat() / page.width
+                    val rw = render.width
                     val rh = (page.height * scale).toInt().coerceAtLeast(1)
                     var bmp = Bitmap.createBitmap(rw, rh, Bitmap.Config.ARGB_8888)
                     try {
                         val m = Matrix().apply { postScale(scale, scale) }
                         page.render(bmp, null, m, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        pages += PdfWriter.splitIfTall(
-                            PdfWriter.JpegPage(rw, rh, PdfWriter.jpegBytes(bmp, level.jpegQ)),
-                            pageWpt,
-                            level.jpegQ,
-                        )
+                        val f = File(ctx.cacheDir, "tmp_${System.currentTimeMillis()}_$i.jpg")
+                        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, render.jpegQ, it) }
+                        files.add(f)
                     } finally {
                         bmp.recycle()
                     }
@@ -76,11 +65,9 @@ object PdfCompressor {
                 }
             }
             onProgress(count, count)
-            val pw = password?.takeIf { it.isNotEmpty() }
-            val pdf = PdfWriter.build(pages, pageWpt, pw)
-            val f = File(ctx.cacheDir, "GrooxOCR_compressed_${ImageToPdf.stamp()}.pdf")
-            f.writeBytes(pdf)
-            return Result(f, pdf.size.toLong(), inBytes, pages.size)
+            val named = ZipKit.ensureBaseNames(files, base)
+            val zip = ZipKit.zip(named, File(ctx.cacheDir, "$base.zip"))
+            return Result(named, zip, count)
         } finally {
             try { renderer?.close() } catch (_: Exception) {}
             try { pfd?.close() } catch (_: Exception) {}

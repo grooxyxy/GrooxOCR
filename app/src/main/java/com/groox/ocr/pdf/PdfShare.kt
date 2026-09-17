@@ -44,4 +44,24 @@ object PdfShare {
         }
         ctx.startActivity(Intent.createChooser(i, "Bagikan PDF"))
     }
+
+    fun shareImage(ctx: Context, file: File) {
+        val uri = contentUri(ctx, file)
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(Intent.createChooser(i, "Bagikan gambar"))
+    }
+
+    fun shareZip(ctx: Context, file: File) {
+        val uri = contentUri(ctx, file)
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "application/zip"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(Intent.createChooser(i, "Bagikan ZIP"))
+    }
 }

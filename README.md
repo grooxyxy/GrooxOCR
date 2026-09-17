@@ -10,7 +10,12 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
   nomor); tiap bubble bisa dihapus, dan semua teks tampil bisa disalin sekaligus.
 - **Tab PDF**: **gambar → PDF** (tiap gambar 1 halaman fit-width, JPEG asli
   ditempel tanpa re-encode → tetap tajam; strip panjang dipecah otomatis jadi
-  halaman scrollable) + **kompres PDF** (render ulang per halaman). Full offline.
+  halaman scrollable) + **kompres PDF** + **PDF terkunci password** (enkripsi
+  standar, dibuka semua reader) + **PDF → JPG**. Semua output bisa di-rename.
+- **Tab Gambar**: **gabung vertikal** (lebar disamakan, panjang & kualitas
+  custom, output JPG + ZIP), **pisah vertikal** (jumlah/tinggi custom),
+  **smart watermark** (teks/logo, hindari area ramai & bubble, pratinjau).
+  Full offline.
 
 ## Arsitektur model
 
@@ -77,7 +82,10 @@ app/src/main/java/com/groox/ocr/
   ui/theme/*, ui/screens/HomeScreen.kt, ui/screens/ResultScreen.kt,
   ui/screens/PdfScreen.kt, ui/components/*,
   ui/viewmodel/OcrViewModel.kt, ui/viewmodel/PdfViewModel.kt
-  pdf/PdfWriter.kt, ImageToPdf.kt, PdfCompressor.kt, PdfShare.kt
+  pdf/PdfWriter.kt, ImageToPdf.kt, PdfCompressor.kt, PdfShare.kt,
+  PdfCrypt.kt, PdfToJpg.kt, ZipKit.kt
+  image/CombineImage.kt, SplitImage.kt, Watermark.kt
+  ui/screens/ImageToolsScreen.kt, ui/viewmodel/ImageToolsViewModel.kt
   util/ExportUtils.kt
 ```
 

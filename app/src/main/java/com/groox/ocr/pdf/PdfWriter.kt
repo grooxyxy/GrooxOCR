@@ -24,9 +24,16 @@ object PdfWriter {
     /**
      * @param pages halaman sudah-final (sudah dipecah bila perlu).
      * @param pageWpt lebar halaman dalam point.
+     * @param password bila diisi → PDF dikunci (enkripsi standar V2/R3,
+     * dibuka semua reader dengan password ini).
      */
-    fun build(pages: List<JpegPage>, pageWpt: Float): ByteArray {
+    fun build(pages: List<JpegPage>, pageWpt: Float, password: String? = null): ByteArray {
         require(pages.isNotEmpty()) { "Tidak ada halaman" }
+        val crypt = if (!password.isNullOrEmpty()) PdfCrypt.prepare(password) else null
+        fun enc(objNum: Int, data: ByteArray): ByteArray =
+            if (crypt == null) data
+            else PdfCrypt.encryptStream(crypt.fileKey, objNum, data)
+
         val out = ByteArrayOutputStream()
         val offsets = mutableListOf<Long>()
         fun w(s: String) = out.write(s.toByteArray(Charsets.US_ASCII))
@@ -46,7 +53,10 @@ object PdfWriter {
         val firstPageObj = 3
         // Nomor objek halaman: tiap halaman pakai 3 objek (page, contents, image).
         for (i in pages.indices) pageObjNums.add(firstPageObj + i * 3)
-        val totalObjs = 2 + pages.size * 3
+        var totalObjs = 2 + pages.size * 3
+        // Objek Encrypt selalu terakhir bila dikunci.
+        val encryptObj = if (crypt != null) totalObjs + 1 else -1
+        if (crypt != null) totalObjs += 1
 
         beginObj() // 1
         w("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
@@ -68,27 +78,40 @@ object PdfWriter {
             )
             val content =
                 "q\n${fmt(pageWpt)} 0 0 ${fmt(pageHpt)} 0 0 cm\n/Im$i Do\nQ\n"
-            val contentBytes = content.toByteArray(Charsets.US_ASCII)
+            val contentBytes = enc(contentObj, content.toByteArray(Charsets.US_ASCII))
             beginObj() // contents
             w("<< /Length ${contentBytes.size} >>\nstream\n")
             w(contentBytes)
             w("\nendstream\nendobj\n")
             beginObj() // image
+            val imgBytes = enc(imageObj, pg.jpeg)
             w(
                 "<< /Type /XObject /Subtype /Image " +
                     "/Width ${pg.imgW} /Height ${pg.imgH} " +
                     "/ColorSpace /DeviceRGB /BitsPerComponent 8 " +
-                    "/Filter /DCTDecode /Length ${pg.jpeg.size} >>\nstream\n"
+                    "/Filter /DCTDecode /Length ${imgBytes.size} >>\nstream\n"
             )
-            w(pg.jpeg)
+            w(imgBytes)
             w("\nendstream\nendobj\n")
+        }
+
+        if (crypt != null) {
+            beginObj() // encrypt dict
+            w(
+                "<< /Filter /Standard /V 2 /R 3 /Length 128 " +
+                    "/O <${crypt.oHex}> /U <${crypt.uHex}> /P ${PdfCrypt.PERMS} >>\nendobj\n"
+            )
         }
 
         val xrefPos = out.size().toLong()
         w("xref\n0 ${totalObjs + 1}\n")
         w("0000000000 65535 f \n")
         offsets.forEach { w("%010d 00000 n \n".format(it)) }
-        w("trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R >>\nstartxref\n$xrefPos\n%%EOF")
+        w("trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R")
+        if (crypt != null) {
+            w(" /Encrypt $encryptObj 0 R /ID [<${crypt.idHex}> <${crypt.idHex}>]")
+        }
+        w(" >>\nstartxref\n$xrefPos\n%%EOF")
         return out.toByteArray()
     }
 

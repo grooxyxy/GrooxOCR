@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,13 +38,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.groox.ocr.pdf.ImageToPdf
 import com.groox.ocr.pdf.PdfCompressor
 import com.groox.ocr.pdf.PdfShare
+import com.groox.ocr.pdf.PdfToJpg
+import com.groox.ocr.pdf.PdfToJpg
 import com.groox.ocr.ui.viewmodel.PdfUiState
 import com.groox.ocr.ui.viewmodel.PdfViewModel
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,13 +58,19 @@ fun PdfScreen(vm: PdfViewModel) {
     val quality by vm.quality.collectAsState()
     val pageWidth by vm.pageWidth.collectAsState()
     val level by vm.level.collectAsState()
+    val render by vm.render.collectAsState()
+    val lockPass by vm.lockPass.collectAsState()
+    val nameBase by vm.nameBase.collectAsState()
 
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> if (uris.isNotEmpty()) vm.addImages(ctx, uris) }
-    val pickPdf = rememberLauncherForActivityResult(
+    val pickPdfCompress = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.compress(ctx, uri) }
+    val pickPdfToJpg = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.pdfToJpg(ctx, uri) }
 
     LazyColumn(
         modifier = Modifier
@@ -132,6 +143,18 @@ fun PdfScreen(vm: PdfViewModel) {
                 )
             }
             item {
+                OutlinedTextField(
+                    value = lockPass,
+                    onValueChange = { vm.setLockPass(it) },
+                    label = { Text("Kunci PDF (password, opsional)") },
+                    placeholder = { Text("Kosong = tanpa kunci") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
                 Button(
                     onClick = { vm.convert(ctx) },
                     modifier = Modifier.fillMaxWidth(),
@@ -145,7 +168,7 @@ fun PdfScreen(vm: PdfViewModel) {
             Text("Kompres PDF", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "PDF di-render ulang per halaman lalu dibangun ulang sebagai PDF JPEG. " +
-                    "Efektif mengecilkan PDF scan/komik yang bengkak. Full offline.",
+                    "Bisa sekalian dikunci password baru.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -160,9 +183,34 @@ fun PdfScreen(vm: PdfViewModel) {
         }
         item {
             OutlinedButton(
-                onClick = { pickPdf.launch(arrayOf("application/pdf")) },
+                onClick = { pickPdfCompress.launch(arrayOf("application/pdf")) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Pilih PDF untuk dikompres") }
+        }
+
+        item { HorizontalDivider(); Spacer(Modifier.height(4.dp)) }
+
+        item {
+            Text("PDF → JPG", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Tiap halaman jadi 1 file JPG + 1 ZIP. Semua nama bisa diubah.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        item {
+            Drop(
+                label = "Resolusi",
+                options = PdfToJpg.Render.entries.toList(),
+                selected = render,
+                labelOf = { it.label },
+                onSelect = { vm.setRender(it) },
+            )
+        }
+        item {
+            OutlinedButton(
+                onClick = { pickPdfToJpg.launch(arrayOf("application/pdf")) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Pilih PDF untuk jadi JPG") }
         }
 
         when (val s = ui) {
@@ -186,20 +234,72 @@ fun PdfScreen(vm: PdfViewModel) {
                 }
             }
             is PdfUiState.ConvertDone -> item {
+                var name by remember(s.result.file.absolutePath) {
+                    mutableStateOf(s.result.file.nameWithoutExtension)
+                }
                 ResultCard(
-                    title = "PDF jadi: ${s.result.pages} halaman dari ${s.result.images} gambar",
+                    title = "PDF jadi: ${s.result.pages} halaman dari ${s.result.images} gambar" +
+                        if (s.result.locked) " • terkunci" else "",
                     size = fmtBytes(s.result.bytes),
-                    file = s.result.file,
+                    name = name,
+                    onName = { name = it; vm.setNameBase(it) },
                     onDone = { vm.backToList() },
+                    onShare = { PdfShare.sharePdf(ctx, vm.resolvePdfFile(s.result.file)) },
+                    onSave = {
+                        val f = vm.resolvePdfFile(s.result.file)
+                        val uri = PdfShare.saveToDownloads(ctx, f, f.name)
+                        Toast.makeText(
+                            ctx,
+                            if (uri != null) "Tersimpan: ${f.name}" else "Butuh Android 10+ (pakai Bagikan)",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
                 )
             }
             is PdfUiState.CompressDone -> item {
                 val pct = (s.result.ratio * 100).toInt()
+                var name by remember(s.result.file.absolutePath) {
+                    mutableStateOf(s.result.file.nameWithoutExtension)
+                }
                 ResultCard(
                     title = "Kompres selesai: ${s.result.pages} halaman",
                     size = "${fmtBytes(s.result.inBytes)} → ${fmtBytes(s.result.outBytes)} ($pct%)",
-                    file = s.result.file,
+                    name = name,
+                    onName = { name = it; vm.setNameBase(it) },
                     onDone = { vm.backToList() },
+                    onShare = { PdfShare.sharePdf(ctx, vm.resolvePdfFile(s.result.file)) },
+                    onSave = {
+                        val f = vm.resolvePdfFile(s.result.file)
+                        val uri = PdfShare.saveToDownloads(ctx, f, f.name)
+                        Toast.makeText(
+                            ctx,
+                            if (uri != null) "Tersimpan: ${f.name}" else "Butuh Android 10+ (pakai Bagikan)",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
+                )
+            }
+            is PdfUiState.ToJpgDone -> item {
+                var name by remember(s.result.zip.absolutePath) {
+                    mutableStateOf(s.result.zip.nameWithoutExtension)
+                }
+                val r = remember(name) { vm.resolveJpg(s.result) }
+                ResultCard(
+                    title = "PDF → JPG: ${r.pages} halaman",
+                    size = "${r.images.size} JPG • " + fmtBytes(r.zip.length()),
+                    name = name,
+                    onName = { name = it; vm.setNameBase(it) },
+                    onDone = { vm.backToList() },
+                    onShare = { PdfShare.sharePdf(ctx, vm.resolveJpg(s.result).zip) },
+                    onSave = {
+                        val rr = vm.resolveJpg(s.result)
+                        val uri = PdfShare.saveToDownloads(ctx, rr.zip, rr.zip.name)
+                        Toast.makeText(
+                            ctx,
+                            if (uri != null) "Tersimpan: ${rr.zip.name}" else "Butuh Android 10+ (pakai Bagikan)",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    },
                 )
             }
             is PdfUiState.Error -> item {
@@ -212,29 +312,29 @@ fun PdfScreen(vm: PdfViewModel) {
 }
 
 @Composable
-private fun ResultCard(title: String, size: String, file: File, onDone: () -> Unit) {
-    val ctx = LocalContext.current
+private fun ResultCard(
+    title: String,
+    size: String,
+    name: String,
+    onName: (String) -> Unit,
+    onDone: () -> Unit,
+    onShare: () -> Unit,
+    onSave: () -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(size)
-            Text(file.name, style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = name,
+                onValueChange = onName,
+                label = { Text("Nama file (tanpa ekstensi)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { PdfShare.sharePdf(ctx, file) },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Bagikan") }
-                OutlinedButton(
-                    onClick = {
-                        val uri = PdfShare.saveToDownloads(ctx, file, file.name)
-                        Toast.makeText(
-                            ctx,
-                            if (uri != null) "Tersimpan di Download/GrooxOCR" else "Butuh Android 10+ (pakai Bagikan)",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Simpan") }
+                Button(onClick = onShare, modifier = Modifier.weight(1f)) { Text("Bagikan") }
+                OutlinedButton(onClick = onSave, modifier = Modifier.weight(1f)) { Text("Simpan") }
             }
             OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
                 Text("Kembali")
@@ -254,7 +354,7 @@ private fun <T> Drop(
 ) {
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = !open }) {
-        androidx.compose.material3.OutlinedTextField(
+        OutlinedTextField(
             value = labelOf(selected),
             onValueChange = {},
             readOnly = true,

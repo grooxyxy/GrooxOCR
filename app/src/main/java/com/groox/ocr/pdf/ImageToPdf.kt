@@ -29,13 +29,20 @@ object ImageToPdf {
         ORIGINAL("Ikut lebar gambar", null),
     }
 
-    data class Result(val file: File, val bytes: Long, val pages: Int, val images: Int)
+    data class Result(
+        val file: File,
+        val bytes: Long,
+        val pages: Int,
+        val images: Int,
+        val locked: Boolean = false,
+    )
 
     suspend fun convert(
         ctx: Context,
         uris: List<Uri>,
         quality: Quality,
         pageWidth: PageWidth,
+        password: String? = null,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Result {
         require(uris.isNotEmpty()) { "Pilih minimal 1 gambar" }
@@ -72,10 +79,11 @@ object ImageToPdf {
         }
         onProgress(uris.size, uris.size)
         require(pages.isNotEmpty()) { "Tidak ada gambar yang bisa diproses" }
-        val pdf = PdfWriter.build(pages, pageWpt)
+        val pw = password?.takeIf { it.isNotEmpty() }
+        val pdf = PdfWriter.build(pages, pageWpt, pw)
         val f = File(ctx.cacheDir, "GrooxOCR_${stamp()}.pdf")
         f.writeBytes(pdf)
-        return Result(f, pdf.size.toLong(), pages.size, uris.size)
+        return Result(f, pdf.size.toLong(), pages.size, uris.size, pw != null)
     }
 
     /** Decode dengan downscale hemat memori bila target < asli. */
