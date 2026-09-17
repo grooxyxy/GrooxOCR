@@ -64,6 +64,7 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
     val spByCount by vm.spByCount.collectAsState()
     val wmSource by vm.wmSource.collectAsState()
     val wmMode by vm.wmMode.collectAsState()
+    val wmColorIdx by vm.wmColorIdx.collectAsState()
 
     val pickCb = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -234,8 +235,9 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
                     )
                 }
                 item {
-                    Drop("Warna teks", Watermark.TEXT_COLORS, vm.wmColorIdx.collectAsState().value,
-                        { it.first }, { c -> vm.wmColorIdx.value = Watermark.TEXT_COLORS.indexOf(c) })
+                    val colors = Watermark.TEXT_COLORS
+                    Drop("Warna teks", colors, colors[wmColorIdx % colors.size],
+                        { it.first }, { c -> vm.wmColorIdx.value = colors.indexOf(c) })
                 }
             } else {
                 item {
