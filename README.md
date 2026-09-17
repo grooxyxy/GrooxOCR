@@ -6,6 +6,8 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
   (720×16000 bahkan lebih), input **JPG / PNG / WebP**, output **per-bubble**
   (bukan per-baris). **Pilih 1 atau banyak gambar** — OCR berjalan berurutan,
   hasil per gambar bisa dijelajah (‹ ›) dan disalin/dibagikan gabungan.
+  Tiap bubble = 1 baris; awalan baris bisa dipilih (tanpa / `-` / `•` / `>` /
+  nomor); tiap bubble bisa dihapus, dan semua teks tampil bisa disalin sekaligus.
 - **Tab PDF**: **gambar → PDF** (tiap gambar 1 halaman fit-width, JPEG asli
   ditempel tanpa re-encode → tetap tajam; strip panjang dipecah otomatis jadi
   halaman scrollable) + **kompres PDF** (render ulang per halaman). Full offline.

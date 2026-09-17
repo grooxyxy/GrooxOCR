@@ -9,9 +9,31 @@ import java.io.File
 /** Export bubble results as TXT (per-bubble) and JSON. */
 object ExportUtils {
 
-    /** One block per bubble, separated by blank line — ready for translation apps. */
-    fun bubblesToTxt(bubbles: List<BubbleGrouper.Bubble>): String =
-        bubbles.joinToString("\n\n") { it.text }
+    /** Awalan baris yang bisa dipilih user, mis. "- halo". */
+    enum class BubblePrefix(val label: String) {
+        NONE("Tanpa awalan"),
+        DASH("Strip  (- teks)"),
+        BULLET("Bullet  (• teks)"),
+        QUOTE("Kutip  (> teks)"),
+        NUMBERED("Nomor  (1. teks)"),
+        ;
+        fun apply(text: String, number: Int): String = when (this) {
+            NONE -> text
+            DASH -> "- $text"
+            BULLET -> "• $text"
+            QUOTE -> "> $text"
+            NUMBERED -> "$number. $text"
+        }
+    }
+
+    /** Satu bubble = satu baris (bubble.text sendiri sudah satu baris). */
+    fun bubblesToTxt(
+        bubbles: List<BubbleGrouper.Bubble>,
+        prefix: BubblePrefix = BubblePrefix.NONE,
+        startNumber: Int = 1,
+    ): String = bubbles.mapIndexed { i, b ->
+        prefix.apply(b.text, startNumber + i)
+    }.joinToString("\n")
 
     fun resultToJson(result: OcrEngine.OcrResult): String {
         val sb = StringBuilder()
@@ -46,11 +68,25 @@ object ExportUtils {
         return sb.toString()
     }
 
+    /**
+     * Gabungan daftar bubble per gambar (sudah difilter user).
+     * Satu gambar → langsung baris-barisnya; banyak gambar → pakai header.
+     */
+    fun batchBubblesToTxt(
+        lists: List<List<BubbleGrouper.Bubble>>,
+        prefix: BubblePrefix = BubblePrefix.NONE,
+    ): String {
+        if (lists.size == 1) return bubblesToTxt(lists[0], prefix)
+        return lists.mapIndexed { i, bs ->
+            "=== Gambar ${i + 1} ===\n" + bubblesToTxt(bs, prefix)
+        }.joinToString("\n")
+    }
+
     /** Gabungan banyak gambar: tiap gambar diberi header "=== Gambar i ===". */
-    fun batchToTxt(results: List<OcrEngine.OcrResult>): String =
-        results.mapIndexed { i, r ->
-            "=== Gambar ${i + 1} ===\n" + bubblesToTxt(r.bubbles)
-        }.joinToString("\n\n")
+    fun batchToTxt(
+        results: List<OcrEngine.OcrResult>,
+        prefix: BubblePrefix = BubblePrefix.NONE,
+    ): String = batchBubblesToTxt(results.map { it.bubbles }, prefix)
 
     /** JSON array per-gambar (struktur tiap item = resultToJson). */
     fun batchToJson(results: List<OcrEngine.OcrResult>): String {

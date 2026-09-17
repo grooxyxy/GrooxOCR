@@ -88,7 +88,8 @@ object BubbleGrouper {
                 r = max(r, m.rect.right); b = max(b, m.rect.bottom)
                 s += m.score
             }
-            Bubble(-1, RectF(l, t, r, b), members, members.joinToString("\n") { it.text }, s / members.size)
+            // Satu bubble = SATU baris: baris-baris digabung dengan spasi.
+            Bubble(-1, RectF(l, t, r, b), members, members.joinToString(" ") { it.text }, s / members.size)
         }.toMutableList()
 
         // Sort bubbles in reading order: primary top, secondary x.

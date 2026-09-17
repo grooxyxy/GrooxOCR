@@ -22,6 +22,8 @@ Output PP-OCR level baris; komik butuh level bubble:
    > 30% / pusat-x berdekatan (untuk SFX 1 huruf).
 3. Urut bubble: top-to-bottom, lalu kiri→kanan (manhwa/manhua) atau
    kanan→kiri (manga, `ReadingOrder`).
-4. Teks bubble = baris diurut atas→bawah, digabung `\n`.
+4. Teks bubble = baris diurut atas→bawah, digabung dengan SPASI sehingga
+   **satu bubble = satu baris**. Awalan per baris (mis. `- halo`) dan
+   hapus teks yang tidak diinginkan diatur di layar hasil (ExportUtils).
 
 Hasil: `OcrResult.bubbles` — siap salin per-bubble atau ekspor TXT/JSON.
