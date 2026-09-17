@@ -68,11 +68,11 @@ class OcrEngine(
         } else emptyList()
 
         // Sessions (lazy open; throws with clear msg if model missing).
-        val detFile = fileOrThrow(models.detFile(), "deteksi v6-small — unduh model dulu")
+        val detFile = fileOrThrow(models.detFile(), "deteksi v6-small — salin model dari APK dulu")
         val recV6File = if (params.recMode != RecMode.KOREAN_ONLY)
-            fileOrThrow(models.recV6File(), "rekognisi v6-small — unduh model dulu") else null
+            fileOrThrow(models.recV6File(), "rekognisi v6-small — salin model dari APK dulu") else null
         val recKoFile = if (params.recMode != RecMode.V6_ONLY)
-            fileOrThrow(models.recKoFile(), "rekognisi Korea — unduh model dulu / pakai mode V6 only") else null
+            fileOrThrow(models.recKoFile(), "rekognisi Korea — salin model dari APK dulu / pakai mode V6 only") else null
 
         val detSession = sessions.detSession(detFile)
         val detInputName = detSession.inputNames.first()
@@ -246,7 +246,7 @@ class OcrEngine(
 
     private fun fileOrThrow(f: File, what: String): File {
         if (!f.exists() || f.length() < 1_000_000) {
-            throw RuntimeException("Model $what belum ada. Buka layar Model & unduh dulu.")
+            throw RuntimeException("Model $what belum ada. Jalankan 'Salin model dari APK' di tab OCR.")
         }
         return f
     }

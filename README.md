@@ -1,9 +1,13 @@
-# GrooxOCR — PP-OCRv6-small Manhwa/Manga OCR for Android
+# GrooxOCR — OCR + PDF Manhwa/Manga untuk Android
 
-APK OCR mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan
-**PP-OCRv6-small sebagai model utama** untuk komik strip panjang
-(720×16000 bahkan lebih), input **JPG / PNG / WebP**, output **per-bubble**
-(bukan per-baris).
+APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
+
+- **Tab OCR**: **PP-OCRv6-small sebagai model utama** untuk komik strip panjang
+  (720×16000 bahkan lebih), input **JPG / PNG / WebP**, output **per-bubble**
+  (bukan per-baris).
+- **Tab PDF**: **gambar → PDF** (tiap gambar 1 halaman fit-width, JPEG asli
+  ditempel tanpa re-encode → tetap tajam; strip panjang dipecah otomatis jadi
+  halaman scrollable) + **kompres PDF** (render ulang per halaman). Full offline.
 
 ## Arsitektur model
 
@@ -53,6 +57,10 @@ Dict dibundel di `app/src/main/assets/`:
   (tap → copy), ekspor TXT/JSON, share. Full offline.
 - **ONNX Runtime Android**: `onnxruntime-android:1.22.0`, 4 thread CPU,
   coba NNAPI lalu fallback CPU, fp32.
+- **PDF offline tanpa dependensi**: `pdf/PdfWriter.kt` (writer PDF 1.4 minimal,
+  embed JPEG langsung), `pdf/ImageToPdf.kt` (multi-gambar → PDF fit-width),
+  `pdf/PdfCompressor.kt` (kompres PDF via `PdfRenderer`), `pdf/PdfShare.kt`
+  (bagikan via FileProvider, simpan ke Download/GrooxOCR via MediaStore).
 
 ## Struktur
 
@@ -64,8 +72,10 @@ app/src/main/java/com/groox/ocr/
          RecPreprocess.kt, CtcDecoder.kt, DictLoader.kt,
          BubbleGrouper.kt, OcrEngine.kt
   ui/theme/*, ui/screens/HomeScreen.kt, ui/screens/ResultScreen.kt,
-  ui/components/*, ui/viewmodel/OcrViewModel.kt
-  util/ImageUtils.kt, ExportUtils.kt
+  ui/screens/PdfScreen.kt, ui/components/*,
+  ui/viewmodel/OcrViewModel.kt, ui/viewmodel/PdfViewModel.kt
+  pdf/PdfWriter.kt, ImageToPdf.kt, PdfCompressor.kt, PdfShare.kt
+  util/ExportUtils.kt
 ```
 
 ## Build
