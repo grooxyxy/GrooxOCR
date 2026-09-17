@@ -1,5 +1,6 @@
 package com.groox.ocr.mt
 
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
@@ -108,30 +109,49 @@ class MarianMt(
         } ?: decOutputs.first()
         val pastPairs = mutableListOf<Pair<String, String>>() // (inputPast, outputPresent)
         fun isReserved(n: String): Boolean = n == idName || n == encHiddenName || n == maskName
+        // useCacheName ditemukan di bawah; kecualikan juga bila cocok pola past.
         for (o in decOutputs) {
             if (o == logitsName) continue
             val stem = o.replace("present", "###")
             val inp = decInputs.firstOrNull { cand ->
-                !isReserved(cand) &&
+                !isReserved(cand) && !cand.contains("use_cache", ignoreCase = true) &&
                     (cand.replace("past_key_values", "###") == stem ||
                         cand.replace("past", "###") == stem)
             }
             if (inp != null) pastPairs.add(inp to o)
         }
 
+        // Flag cabang cache ala Optimum (wajib di sebagian ekspor merged):
+        // false = langkah pertama tanpa past, true = pakai past.
+        val useCacheName = decInputs.firstOrNull {
+            it.contains("use_cache", ignoreCase = true)
+        }
+
         val result = mutableListOf<Int>()
         var token = tokenizer.padId // decoder_start_token_id = pad (Marian)
         var past: Map<String, FloatArray> = emptyMap()
         var pastShapes: Map<String, LongArray> = emptyMap()
-        // Langkah pertama: sebagian ekspor merged WAJIB past (isi nol),
-        // sebagian justru menolaknya → coba nol dulu, fallback tanpa past.
-        var triedZeroPast = false
+        // Ekspor lawas tanpa use_cache: coba past nol dulu, fallback tanpa past.
+        var triedZeroPast = useCacheName != null
         var skipPastInputs = false
         var step = 0
+        // Mode full-recompute (tanpa cache): bila tak ada pasangan past sama
+        // sekali, tiap langkah diberi SELURUH prefix + use_cache=false.
+        val fullRecompute = useCacheName != null && pastPairs.isEmpty()
         while (step < maxNewTokens) {
             val feeds = linkedMapOf<String, OnnxTensor>()
             try {
-                feeds[idName] = longTensor(longArrayOf(1, 1), listOf(token.toLong()))
+                if (fullRecompute) {
+                    val prefix = listOf(tokenizer.padId) + result
+                    feeds[idName] = longTensor(
+                        longArrayOf(1, prefix.size.toLong()),
+                        prefix.map { it.toLong() },
+                    )
+                    if (useCacheName != null) feeds[useCacheName] = boolTensor(false)
+                } else {
+                    feeds[idName] = longTensor(longArrayOf(1, 1), listOf(token.toLong()))
+                    if (useCacheName != null) feeds[useCacheName] = boolTensor(step > 0)
+                }
                 if (encHiddenName != null) {
                     feeds[encHiddenName] = floatTensor(
                         longArrayOf(1, encLen.toLong(), hDim.toLong()), encHidden
@@ -142,7 +162,7 @@ class MarianMt(
                         longArrayOf(1, encLen.toLong()), List(encLen) { 1L }
                     )
                 }
-                if (!skipPastInputs) {
+                if (!fullRecompute && !skipPastInputs && (step > 0 || useCacheName == null)) {
                     for ((inp, _) in pastPairs) {
                         val arr = past[inp]
                         val shp = pastShapes[inp]
@@ -157,8 +177,8 @@ class MarianMt(
                 val stepOut: StepOut = try {
                     runDecoderStep(dec, feeds, logitsName, pastPairs)
                 } catch (e: Exception) {
-                    if (!triedZeroPast && past.isEmpty()) {
-                        // Varian yang menolak past di langkah pertama → ulangi tanpa past.
+                    if (useCacheName == null && !triedZeroPast && past.isEmpty()) {
+                        // Varian lawas yang menolak past di langkah pertama.
                         triedZeroPast = true
                         skipPastInputs = true
                         continue
@@ -188,7 +208,8 @@ class MarianMt(
         val shapes: Map<String, LongArray>,
     )
 
-    /** Satu langkah decoder greedy. */
+    /** Satu langkah decoder greedy (argmax posisi TERAKHIR — benar untuk
+     *  cache 1-token maupun full-recompute multi-token). */
     private fun runDecoderStep(
         dec: OrtSession,
         feeds: Map<String, OnnxTensor>,
@@ -198,7 +219,12 @@ class MarianMt(
         dec.run(feeds).use { out ->
             val logitsT = out.get(logitsName).orElse(null) as? OnnxTensor
                 ?: firstTensorFallback(out)
-            val token = argmax(tensorToFloatArray(logitsT))
+            val logits = tensorToFloatArray(logitsT)
+            val shape = logitsT.info.shape // [..., seq, vocab]
+            val vocab = shape.last().toInt()
+            val seqLen = if (shape.size >= 2) shape[shape.size - 2].toInt() else 1
+            val base = ((seqLen - 1).coerceAtLeast(0)) * vocab
+            val token = argmax(logits, base, vocab)
             val nextPast = mutableMapOf<String, FloatArray>()
             val nextShapes = mutableMapOf<String, LongArray>()
             for ((inp, o) in pastPairs) {
@@ -210,12 +236,13 @@ class MarianMt(
         }
     }
 
-    private fun argmax(a: FloatArray): Int {
+    private fun argmax(a: FloatArray, base: Int = 0, len: Int = a.size - base): Int {
         var bi = 0
-        var bv = a[0]
-        for (i in 1 until a.size) {
-            if (a[i] > bv) {
-                bv = a[i]
+        var bv = a[base]
+        for (i in 1 until len) {
+            if (base + i >= a.size) break
+            if (a[base + i] > bv) {
+                bv = a[base + i]
                 bi = i
             }
         }
@@ -237,6 +264,13 @@ class MarianMt(
             if (e.value is OnnxTensor) return e.value as OnnxTensor
         }
         throw RuntimeException("Model tidak mengembalikan tensor")
+    }
+
+    private fun boolTensor(value: Boolean): OnnxTensor {
+        val buf = ByteBuffer.allocateDirect(1).order(ByteOrder.nativeOrder())
+        buf.put(if (value) 1 else 0)
+        buf.rewind()
+        return OnnxTensor.createTensor(env, buf, longArrayOf(1), OnnxJavaType.BOOL)
     }
 
     private fun longTensor(shape: LongArray, data: List<Long>): OnnxTensor {
