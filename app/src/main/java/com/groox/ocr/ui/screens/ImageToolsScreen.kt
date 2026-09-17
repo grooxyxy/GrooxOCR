@@ -61,6 +61,9 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
     val cbImages by vm.cbImages.collectAsState()
     val spImages by vm.spImages.collectAsState()
     val wmImages by vm.wmImages.collectAsState()
+    val spByCount by vm.spByCount.collectAsState()
+    val wmSource by vm.wmSource.collectAsState()
+    val wmMode by vm.wmMode.collectAsState()
 
     val pickCb = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -163,7 +166,7 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
                 Drop("Mode pisah", listOf(true, false), vm.spByCount.collectAsState().value,
                     { if (it) "Jumlah bagian" else "Tinggi per bagian" }, { vm.spByCount.value = it })
             }
-            if (vm.spByCount.collectAsState().value) {
+            if (spByCount) {
                 item { QSlider("Jumlah bagian", vm.spParts.collectAsState().value, 2..10) { vm.spParts.value = it } }
             } else {
                 item {
@@ -220,7 +223,7 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
                 Drop("Sumber", Watermark.Source.entries.toList(), vm.wmSource.collectAsState().value,
                     { it.label }, { vm.wmSource.value = it })
             }
-            if (vm.wmSource.collectAsState().value == Watermark.Source.TEXT) {
+            if (wmSource == Watermark.Source.TEXT) {
                 item {
                     OutlinedTextField(
                         value = vm.wmText.collectAsState().value,
@@ -252,7 +255,7 @@ fun ImageToolsScreen(vm: ImageToolsViewModel) {
                 Drop("Blend", Watermark.Blend.entries.toList(), vm.wmBlend.collectAsState().value,
                     { it.label }, { vm.wmBlend.value = it })
             }
-            if (vm.wmMode.collectAsState().value == Watermark.Mode.SMART) {
+            if (wmMode == Watermark.Mode.SMART) {
                 item { QSlider("Jumlah per gambar", vm.wmCount.collectAsState().value, 1..6) { vm.wmCount.value = it } }
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {

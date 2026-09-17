@@ -256,7 +256,7 @@ object Watermark {
                 val x = c.cx.coerceIn(margin + wmW / 2, w - margin - wmW / 2)
                 val y = c.cy.coerceIn(margin + wmW / 2, h - margin - wmW / 2)
                 if (w - 2 * margin - wmW < 0 || h - 2 * margin - wmW < 0) {
-                    picked.add(w / 2 to h / 2)
+                    picked.add(w / 2f to h / 2f)
                     break
                 }
                 if (picked.all { hypot((it.first - x).toDouble(), (it.second - y).toDouble()) > minDist }) {

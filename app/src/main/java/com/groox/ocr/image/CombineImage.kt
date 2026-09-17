@@ -35,7 +35,7 @@ object CombineImage {
         require(targetW in 240..2160) { "Lebar target 240–2160" }
         require(maxOutH in 2000..30000) { "Panjang maks 2000–30000" }
 
-        data class Src(val uri: Uri, val w: Int, val h: Int, val scaledH: Int)
+        // Src = object-level (lihat bawah file).
         val srcs = uris.map { u ->
             val info = ImageTiling.probe(ctx, u)
             Src(u, info.width, info.height, (info.height.toFloat() * targetW / info.width).toInt().coerceAtLeast(1))

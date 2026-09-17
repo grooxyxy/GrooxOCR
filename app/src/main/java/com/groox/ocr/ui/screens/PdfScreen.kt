@@ -45,7 +45,6 @@ import com.groox.ocr.pdf.ImageToPdf
 import com.groox.ocr.pdf.PdfCompressor
 import com.groox.ocr.pdf.PdfShare
 import com.groox.ocr.pdf.PdfToJpg
-import com.groox.ocr.pdf.PdfToJpg
 import com.groox.ocr.ui.viewmodel.PdfUiState
 import com.groox.ocr.ui.viewmodel.PdfViewModel
 
