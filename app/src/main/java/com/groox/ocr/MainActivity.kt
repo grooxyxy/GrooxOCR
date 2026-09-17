@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.groox.ocr.ui.screens.DonateScreen
 import com.groox.ocr.ui.screens.HomeScreen
 import com.groox.ocr.ui.screens.PdfScreen
 import com.groox.ocr.ui.screens.ResultScreen
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
                         TabRow(selectedTabIndex = tab) {
                             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("OCR") })
                             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("PDF") })
+                            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Donasi") })
                         }
                         if (tab == 0) {
                             val vm: OcrViewModel = viewModel(factory = factory)
@@ -136,9 +138,11 @@ class MainActivity : ComponentActivity() {
                                     onCancel = { vm.cancel() },
                                 )
                             }
-                        } else {
+                        } else if (tab == 1) {
                             val pvm: PdfViewModel = viewModel(factory = factory)
                             PdfScreen(vm = pvm)
+                        } else {
+                            DonateScreen()
                         }
                     }
                 }

@@ -104,3 +104,5 @@ Lihat `docs/` untuk detail pipeline, tiling, dan bubble grouping.
 ## Lisensi
 
 Kode aplikasi MIT. Model PaddleOCR Apache-2.0 (milik Baidu/PaddlePaddle).
+
+Channel utama: https://t.me/VasiliasPV — develop by @AnergiaPV.
