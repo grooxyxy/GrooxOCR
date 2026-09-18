@@ -104,12 +104,18 @@ class MiganMt(private val appContext: Context) {
                     feeds[mskName] = uint8Tensor(mskBytes, longArrayOf(1, 1, sh.toLong(), sw.toLong()))
                 }
                 s.run(feeds).use { out ->
-                    val t = out.values.firstOrNull { it is OnnxTensor } as? OnnxTensor
-                        ?: throw RuntimeException("MiGAN tanpa output tensor")
-                    val ob = t.byteBuffer
+                    var t: OnnxTensor? = null
+                    for (e in out) {
+                        if (e.value is OnnxTensor) {
+                            t = e.value as OnnxTensor
+                            break
+                        }
+                    }
+                    val tensor = t ?: throw RuntimeException("MiGAN tanpa output tensor")
+                    val ob = tensor.byteBuffer
                     val oarr = ByteArray(ob.remaining())
                     ob.get(oarr)
-                    val shape = t.info.shape
+                    val shape = tensor.info.shape
                     // Bentuk umum [1,3,H,W]; bila 512 tetap, skala kembali.
                     var ow = sw
                     var oh = sh
