@@ -13,7 +13,7 @@ android {
         minSdk = 28
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0.0-v6small"
+        versionName = "1.0.1-v6small"
 
         // ONNX Runtime Android ships arm64-v8a + armeabi-v7a.
         // x86_64 only needed for emulator; keep both ABIs for release.

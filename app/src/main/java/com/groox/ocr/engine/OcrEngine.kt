@@ -289,8 +289,11 @@ class OcrEngine(
 
     /** Crop a det box (with small padding) directly from the source image. */
     private fun cropBox(uri: Uri, imgW: Int, imgH: Int, box: RectF): Bitmap? {
-        val padX = (box.width() * 0.05f + 3f)
-        val padY = (box.height() * 0.08f + 3f)
+        // Padding lebih longgar: crop ketat memotong tepi glyph sehingga
+        // recognizer menjatuhkan spasi antar kata ("idon'thave"). Konteks
+        // putih di sekitar teks membantu CTC mengembalikan token spasi.
+        val padX = (box.width() * 0.06f + 6f)
+        val padY = (box.height() * 0.22f + 5f)
         val l = (box.left - padX).toInt().coerceIn(0, imgW - 1)
         val t = (box.top - padY).toInt().coerceIn(0, imgH - 1)
         val r = (box.right + padX).toInt().coerceIn(l + 8, imgW)

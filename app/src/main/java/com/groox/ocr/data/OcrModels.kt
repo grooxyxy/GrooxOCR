@@ -43,7 +43,9 @@ object OcrModels {
     /** DB postprocess defaults (from PP-OCRv6_small_det inference.yml). */
     const val DB_THRESH = 0.2f
     const val DB_BOX_THRESH = 0.5f // yml=0.45; 0.5 slightly stricter for comics
-    const val DB_UNCLIP_RATIO = 1.4f
+    // 1.6 = default Paddle untuk v5/v6; 1.4 terlalu ketat → tepi baris teks
+    // terpotong, spasi antar kata hilang di hasil rekognisi.
+    const val DB_UNCLIP_RATIO = 1.6f
     const val DB_MAX_CANDIDATES = 3000
 
     /** Recognition input: height 48, BGR, width dynamic. */

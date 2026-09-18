@@ -55,6 +55,12 @@ object CtcDecoder {
     fun postProcess(raw: String): String {
         var s = raw.lowercase().replace(Regex("\\s+"), " ").trim()
         if (s.isEmpty()) return s
+        // Buang spasi SEBELUM tanda baca ("hello , world !" → "hello, world!").
+        s = s.replace(Regex(" ([.,!?;:%])"), "$1")
+        // Sisipkan spasi antara huruf↔angka yang menempel ("k44" dibiarkan bila
+        // diawali/diakhiri non-ASCII SFX; pola umum "page3" → "page 3").
+        s = s.replace(Regex("([a-z])(\\d)"), "$1 $2")
+            .replace(Regex("(\\d)([a-z])"), "$1 $2")
         val sb = StringBuilder(s.length + 4)
         var i = 0
         while (i < s.length) {

@@ -4,18 +4,24 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -29,13 +35,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.groox.ocr.engine.BubbleGrouper
 import com.groox.ocr.engine.OcrEngine
 import com.groox.ocr.ui.components.OcrOverlay
@@ -230,24 +241,35 @@ private fun ImageResultCard(item: BatchItem) {
                     "${result.elapsedMs} ms",
                 style = MaterialTheme.typography.bodySmall,
             )
-            // Preview fit-width; overlay diskala proporsional.
-            val aspect = result.imageWidth.toFloat() / result.imageHeight.coerceAtLeast(1)
-            androidx.compose.foundation.layout.Box(
+            // Preview: decode manual dengan downsample (strip 720×16000+ melebihi
+            // batas tekstur GPU sehingga loader async biasa menampilkan LAYAR KOSONG).
+            // Tinggi Box tetap 420dp; overlay pakai matematika Fit yang sama.
+            val preview by produceState<Bitmap?>(initialValue = null, item.uri) {
+                value = withContext(Dispatchers.IO) { decodePreviewBitmap(ctx, item.uri) }
+            }
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(aspect.coerceIn(0.05f, 3f)),
+                    .height(420.dp)
+                    .clipToBounds()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
-                AsyncImage(
-                    model = item.uri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                OcrOverlay(
-                    boxes = result.bubbles.map { it.rect },
-                    imageWidth = result.imageWidth,
-                    imageHeight = result.imageHeight,
-                )
+                val pb = preview
+                if (pb != null) {
+                    Image(
+                        bitmap = pb.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    OcrOverlay(
+                        boxes = result.bubbles.map { it.rect },
+                        imageWidth = result.imageWidth,
+                        imageHeight = result.imageHeight,
+                    )
+                } else {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
             }
         }
     }
@@ -276,6 +298,24 @@ private fun BubbleCard(
                 TextButton(onClick = onDelete) { Text("Hapus") }
             }
         }
+    }
+}
+
+/** Decode preview yang aman memori: maks ~1080px lebar / ~2400px tinggi. */
+private fun decodePreviewBitmap(ctx: Context, uri: android.net.Uri): Bitmap? {
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > 1080 || bounds.outHeight / sample > 2400) sample *= 2
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    } catch (t: Throwable) {
+        null
     }
 }
 
