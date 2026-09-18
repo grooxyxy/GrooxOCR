@@ -12,20 +12,28 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 
 /**
- * MarianMT INT8 (Xenova opus-mt-*-int8) via ONNX Runtime.
- * encoder_model_int8.onnx + decoder_model_merged_int8.onnx, greedy decoding.
- * Nama input/output dibaca dinamis dari sesi (tahan variasi ekspor).
+ * MarianMT INT8 (Xenova opus-mt-*-int8) via ONNX Runtime, greedy decoding.
+ *
+ * Jalur utama: decoder TERPISAH (tanpa node If sama sekali) —
+ * `decoder_int8` untuk langkah pertama, `decoder_with_past_int8` sesudahnya.
+ * Fallback: `decoder_merged_int8` + flag `use_cache_branch` bila file
+ * terpisah tak ada. Nama input/output dibaca dinamis dari sesi.
  */
 class MarianMt(
     private val encoderFile: File,
-    private val decoderFile: File,
+    private val split: SplitFiles?,
+    private val mergedFile: File?,
     private val tokenizer: UnigramTokenizer,
     private val maxNewTokens: Int = 128,
 ) : AutoCloseable {
 
+    data class SplitFiles(val noPast: File, val withPast: File)
+
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private var encoder: OrtSession? = null
-    private var decoder: OrtSession? = null
+    private var dec0: OrtSession? = null
+    private var decPast: OrtSession? = null
+    private var merged: OrtSession? = null
 
     private fun sessionOptions(): OrtSession.SessionOptions =
         OrtSession.SessionOptions().apply {
@@ -34,18 +42,39 @@ class MarianMt(
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
 
-    @Synchronized
-    private fun enc(): OrtSession {
-        encoder?.let { return it }
-        require(encoderFile.exists()) { "Encoder hilang: ${encoderFile.name}" }
-        return env.createSession(encoderFile.absolutePath, sessionOptions()).also { encoder = it }
+    private fun open(f: File, tag: String): OrtSession {
+        require(f.exists() && f.length() > 1_000_000) { "$tag hilang: ${f.name}" }
+        return env.createSession(f.absolutePath, sessionOptions())
     }
 
     @Synchronized
-    private fun dec(): OrtSession {
-        decoder?.let { return it }
-        require(decoderFile.exists()) { "Decoder hilang: ${decoderFile.name}" }
-        return env.createSession(decoderFile.absolutePath, sessionOptions()).also { decoder = it }
+    private fun enc(): OrtSession {
+        encoder?.let { return it }
+        return open(encoderFile, "Encoder").also { encoder = it }
+    }
+
+    @Synchronized
+    private fun sess0(): OrtSession? {
+        dec0?.let { return it }
+        val f = split?.noPast ?: return null
+        if (!f.exists() || f.length() <= 1_000_000) return null
+        return open(f, "Decoder").also { dec0 = it }
+    }
+
+    @Synchronized
+    private fun sessPast(): OrtSession? {
+        decPast?.let { return it }
+        val f = split?.withPast ?: return null
+        if (!f.exists() || f.length() <= 1_000_000) return null
+        return open(f, "Decoder-past").also { decPast = it }
+    }
+
+    @Synchronized
+    private fun sessMerged(): OrtSession? {
+        merged?.let { return it }
+        val f = mergedFile ?: return null
+        if (!f.exists() || f.length() <= 1_000_000) return null
+        return open(f, "Decoder-merged").also { merged = it }
     }
 
     /** Terjemahkan satu teks pendek (satu baris/bubble). */
@@ -54,7 +83,6 @@ class MarianMt(
         val ids = tokenizer.encode(text)
         if (ids.isEmpty()) return ""
         val encSession = enc()
-        val decSession = dec()
 
         val n = ids.size
         val encInputs = linkedMapOf<String, OnnxTensor>()
@@ -67,128 +95,117 @@ class MarianMt(
                 encInputs["attention_mask"] = longTensor(longArrayOf(1, n.toLong()), List(n) { 1L })
             }
             if (encInputs.isEmpty()) {
-                // Fallback: beri input pertama apa pun namanya.
                 encInputs[names.first()] =
                     longTensor(longArrayOf(1, n.toLong()), ids.map { it.toLong() })
             }
             encSession.run(encInputs).use { out ->
                 val hidden = firstTensor(encSession, out)
                 val encHidden = tensorToFloatArray(hidden)
-                val encShape = hidden.info.shape // [1, n, hidden]
-                val hDim = encShape.last().toInt()
-                val decOut = greedyDecode(decSession, n, hDim, encHidden)
-                return tokenizer.decode(decOut)
+                val hDim = hidden.info.shape.last().toInt()
+                return tokenizer.decode(greedyDecode(n, hDim, encHidden))
             }
         } finally {
             encInputs.values.forEach { try { it.close() } catch (_: Exception) {} }
         }
     }
 
-    private fun greedyDecode(
-        dec: OrtSession,
-        encLen: Int,
-        hDim: Int,
-        encHidden: FloatArray,
-    ): List<Int> {
-        val decInputs = dec.inputNames.toList()
-        val encHiddenName = decInputs.firstOrNull {
+    /** Info nama IO sesi — disertakan di pesan error agar debug cepat. */
+    private fun ioInfo(s: OrtSession): String =
+        "in=${s.inputNames} out=${s.outputNames}"
+
+    private data class EP(
+        val id: String?,
+        val encHidden: String?,
+        val mask: String?,
+        val useCache: String?,
+        val logits: String,
+        val pairs: List<Pair<String, String>>,
+    )
+
+    private fun endpoints(s: OrtSession): EP {
+        val ins = s.inputNames.toList()
+        val id = ins.firstOrNull { it.equals("input_ids", ignoreCase = true) }
+            ?: ins.firstOrNull { it.contains("input_id", ignoreCase = true) }
+        requireNotNull(id) { "Tanpa input_ids. ${ioInfo(s)}" }
+        val encH = ins.firstOrNull {
             it.contains("encoder_hidden", ignoreCase = true) || it.contains("encoder_out", ignoreCase = true)
-        } ?: decInputs.firstOrNull { it.contains("encoder", ignoreCase = true) }
-        val maskName = decInputs.firstOrNull {
-            it.contains("encoder_attention_mask", ignoreCase = true)
-        }
-        val idName = decInputs.firstOrNull {
-            it.equals("input_ids", ignoreCase = true)
-        } ?: decInputs.firstOrNull { it.contains("input_id", ignoreCase = true) }
-        requireNotNull(idName) { "Decoder tanpa input input_ids" }
-
-        // Pasangan past (input) <-> present (output): cocokkan akhiran nama.
-        val decOutputs = dec.outputNames.toList()
-        val logitsName = decOutputs.firstOrNull {
-            it.equals("logits", ignoreCase = true)
-        } ?: decOutputs.first()
-        val pastPairs = mutableListOf<Pair<String, String>>() // (inputPast, outputPresent)
-        fun isReserved(n: String): Boolean = n == idName || n == encHiddenName || n == maskName
-        // useCacheName ditemukan di bawah; kecualikan juga bila cocok pola past.
-        for (o in decOutputs) {
-            if (o == logitsName) continue
+        } ?: ins.firstOrNull { it.contains("encoder", ignoreCase = true) && !it.contains("mask", ignoreCase = true) }
+        val mask = ins.firstOrNull { it.contains("encoder_attention_mask", ignoreCase = true) }
+        val useCache = ins.firstOrNull { it.contains("use_cache", ignoreCase = true) }
+        val outs = s.outputNames.toList()
+        val logits = outs.firstOrNull { it.equals("logits", ignoreCase = true) } ?: outs.first()
+        val pairs = mutableListOf<Pair<String, String>>()
+        for (o in outs) {
+            if (o == logits) continue
             val stem = o.replace("present", "###")
-            val inp = decInputs.firstOrNull { cand ->
-                !isReserved(cand) && !cand.contains("use_cache", ignoreCase = true) &&
-                    (cand.replace("past_key_values", "###") == stem ||
-                        cand.replace("past", "###") == stem)
+            val inp = ins.firstOrNull { c ->
+                c != id && c != encH && c != mask && c != useCache &&
+                    !c.contains("use_cache", ignoreCase = true) &&
+                    (c.replace("past_key_values", "###") == stem ||
+                        c.replace("past", "###") == stem)
             }
-            if (inp != null) pastPairs.add(inp to o)
+            if (inp != null) pairs.add(inp to o)
         }
+        return EP(id, encH, mask, useCache, logits, pairs)
+    }
 
-        // Flag cabang cache ala Optimum (wajib di sebagian ekspor merged):
-        // false = langkah pertama tanpa past, true = pakai past.
-        val useCacheName = decInputs.firstOrNull {
-            it.contains("use_cache", ignoreCase = true)
-        }
+    private fun greedyDecode(encLen: Int, hDim: Int, encHidden: FloatArray): List<Int> {
+        val useSplit = sess0() != null && sessPast() != null
+        val mergedSess = if (useSplit) null else sessMerged()
+            ?: throw RuntimeException("Tidak ada file decoder (split maupun merged)")
+        val ep0 = endpoints(if (useSplit) sess0()!! else mergedSess!!)
+        val epPast = if (useSplit) endpoints(sessPast()!!) else ep0
 
         val result = mutableListOf<Int>()
         var token = tokenizer.padId // decoder_start_token_id = pad (Marian)
         var past: Map<String, FloatArray> = emptyMap()
         var pastShapes: Map<String, LongArray> = emptyMap()
-        // Ekspor lawas tanpa use_cache: coba past nol dulu, fallback tanpa past.
-        var triedZeroPast = useCacheName != null
-        var skipPastInputs = false
         var step = 0
-        // Mode full-recompute (tanpa cache): bila tak ada pasangan past sama
-        // sekali, tiap langkah diberi SELURUH prefix + use_cache=false.
-        val fullRecompute = useCacheName != null && pastPairs.isEmpty()
         while (step < maxNewTokens) {
+            val sess = if (useSplit && step > 0) sessPast()!! else
+                (if (useSplit) sess0()!! else mergedSess!!)
+            val ep = if (useSplit && step > 0) epPast else ep0
             val feeds = linkedMapOf<String, OnnxTensor>()
             try {
-                if (fullRecompute) {
+                val isMerged = !useSplit
+                if (isMerged && ep.pairs.isEmpty() && ep.useCache != null) {
+                    // Full-recompute: seluruh prefix + use_cache=false.
                     val prefix = listOf(tokenizer.padId) + result
-                    feeds[idName] = longTensor(
-                        longArrayOf(1, prefix.size.toLong()),
-                        prefix.map { it.toLong() },
+                    feeds[ep.id!!] = longTensor(
+                        longArrayOf(1, prefix.size.toLong()), prefix.map { it.toLong() }
                     )
-                    if (useCacheName != null) feeds[useCacheName] = boolTensor(false)
+                    feeds[ep.useCache] = boolTensor(false)
                 } else {
-                    feeds[idName] = longTensor(longArrayOf(1, 1), listOf(token.toLong()))
-                    if (useCacheName != null) feeds[useCacheName] = boolTensor(step > 0)
+                    feeds[ep.id!!] = longTensor(longArrayOf(1, 1), listOf(token.toLong()))
+                    if (ep.useCache != null) feeds[ep.useCache] = boolTensor(step > 0)
                 }
-                if (encHiddenName != null) {
-                    feeds[encHiddenName] = floatTensor(
+                if (ep.encHidden != null) {
+                    feeds[ep.encHidden] = floatTensor(
                         longArrayOf(1, encLen.toLong(), hDim.toLong()), encHidden
                     )
                 }
-                if (maskName != null) {
-                    feeds[maskName] = longTensor(
+                if (ep.mask != null) {
+                    feeds[ep.mask] = longTensor(
                         longArrayOf(1, encLen.toLong()), List(encLen) { 1L }
                     )
                 }
-                if (!fullRecompute && !skipPastInputs && (step > 0 || useCacheName == null)) {
-                    for ((inp, _) in pastPairs) {
+                if (step > 0 || (isMerged && ep.useCache == null)) {
+                    for ((inp, _) in ep.pairs) {
                         val arr = past[inp]
                         val shp = pastShapes[inp]
-                        if (arr != null && shp != null) {
-                            feeds[inp] = floatTensor(shp, arr)
-                        } else if (!triedZeroPast) {
-                            // Marian-base: 8 heads × 64 dim.
-                            feeds[inp] = floatTensor(longArrayOf(1, 8, 1, 64), FloatArray(8 * 64))
-                        }
+                        if (arr != null && shp != null) feeds[inp] = floatTensor(shp, arr)
                     }
                 }
                 val stepOut: StepOut = try {
-                    runDecoderStep(dec, feeds, logitsName, pastPairs)
+                    runDecoderStep(sess, feeds, ep)
                 } catch (e: Exception) {
-                    if (useCacheName == null && !triedZeroPast && past.isEmpty()) {
-                        // Varian lawas yang menolak past di langkah pertama.
-                        triedZeroPast = true
-                        skipPastInputs = true
-                        continue
-                    }
-                    throw e
+                    throw RuntimeException("${ioInfo(sess)} ← ${e.message}", e)
                 }
-                triedZeroPast = true
                 token = stepOut.token
-                past = stepOut.past
-                pastShapes = stepOut.shapes
+                // Samakan kunci past ke nama input sesi langkah berikut.
+                val epNext = if (useSplit) epPast else ep0
+                past = remapPast(stepOut.past, stepOut.shapes, ep.pairs, epNext.pairs)
+                pastShapes = remapShapes(stepOut.shapes, ep.pairs, epNext.pairs)
                 result.add(token)
                 step++
             } finally {
@@ -202,22 +219,62 @@ class MarianMt(
         return result
     }
 
+    /** Petakan past {inputName→data} sesi A ke nama input sesi B via akhiran. */
+    private fun remapPast(
+        past: Map<String, FloatArray>,
+        shapes: Map<String, LongArray>,
+        fromPairs: List<Pair<String, String>>,
+        toPairs: List<Pair<String, String>>,
+    ): Map<String, FloatArray> {
+        if (toPairs.isEmpty()) return past
+        // Kunci berdasar NAMA OUTPUT present (stabil antar sesi bila sama).
+        val byPresent = mutableMapOf<String, FloatArray>()
+        val shpPresent = mutableMapOf<String, LongArray>()
+        for ((inp, o) in fromPairs) {
+            if (past.containsKey(inp)) {
+                byPresent[o] = past[inp]!!
+                if (shapes.containsKey(inp)) shpPresent[o] = shapes[inp]!!
+            }
+        }
+        val out = mutableMapOf<String, FloatArray>()
+        for ((inp, o) in toPairs) {
+            if (byPresent.containsKey(o)) out[inp] = byPresent[o]!!
+        }
+        // Bila tak ada yang cocok (nama beda total), teruskan apa adanya.
+        return if (out.isEmpty()) past else out
+    }
+
+    private fun remapShapes(
+        shapes: Map<String, LongArray>,
+        fromPairs: List<Pair<String, String>>,
+        toPairs: List<Pair<String, String>>,
+    ): Map<String, LongArray> {
+        if (toPairs.isEmpty()) return shapes
+        val byPresent = mutableMapOf<String, LongArray>()
+        for ((inp, o) in fromPairs) {
+            if (shapes.containsKey(inp)) byPresent[o] = shapes[inp]!!
+        }
+        val out = mutableMapOf<String, LongArray>()
+        for ((inp, o) in toPairs) {
+            if (byPresent.containsKey(o)) out[inp] = byPresent[o]!!
+        }
+        return if (out.isEmpty()) shapes else out
+    }
+
     private data class StepOut(
         val token: Int,
         val past: Map<String, FloatArray>,
         val shapes: Map<String, LongArray>,
     )
 
-    /** Satu langkah decoder greedy (argmax posisi TERAKHIR — benar untuk
-     *  cache 1-token maupun full-recompute multi-token). */
+    /** Satu langkah decoder greedy (argmax posisi TERAKHIR). */
     private fun runDecoderStep(
         dec: OrtSession,
         feeds: Map<String, OnnxTensor>,
-        logitsName: String,
-        pastPairs: List<Pair<String, String>>,
+        ep: EP,
     ): StepOut {
         dec.run(feeds).use { out ->
-            val logitsT = out.get(logitsName).orElse(null) as? OnnxTensor
+            val logitsT = out.get(ep.logits).orElse(null) as? OnnxTensor
                 ?: firstTensorFallback(out)
             val logits = tensorToFloatArray(logitsT)
             val shape = logitsT.info.shape // [..., seq, vocab]
@@ -227,7 +284,7 @@ class MarianMt(
             val token = argmax(logits, base, vocab)
             val nextPast = mutableMapOf<String, FloatArray>()
             val nextShapes = mutableMapOf<String, LongArray>()
-            for ((inp, o) in pastPairs) {
+            for ((inp, o) in ep.pairs) {
                 val t = out.get(o).orElse(null) as? OnnxTensor ?: continue
                 nextPast[inp] = tensorToFloatArray(t)
                 nextShapes[inp] = t.info.shape
@@ -298,8 +355,12 @@ class MarianMt(
 
     override fun close() {
         try { encoder?.close() } catch (_: Exception) {}
-        try { decoder?.close() } catch (_: Exception) {}
+        try { dec0?.close() } catch (_: Exception) {}
+        try { decPast?.close() } catch (_: Exception) {}
+        try { merged?.close() } catch (_: Exception) {}
         encoder = null
-        decoder = null
+        dec0 = null
+        decPast = null
+        merged = null
     }
 }

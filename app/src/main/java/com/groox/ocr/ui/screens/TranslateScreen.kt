@@ -172,8 +172,16 @@ fun TranslateScreen(vm: TranslateViewModel) {
             }
             is TranslateUi.Error -> {
                 Text("Gagal: ${s.message}", color = MaterialTheme.colorScheme.error)
+                OutlinedButton(
+                    onClick = {
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("GrooxOCR-error", s.message))
+                        Toast.makeText(ctx, "Error disalin", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Salin error (untuk laporan)") }
                 Button(onClick = { vm.translate() }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Terjemahkan")
+                    Text("Coba lagi")
                 }
             }
             TranslateUi.Idle -> {

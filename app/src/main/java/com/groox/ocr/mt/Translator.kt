@@ -29,6 +29,12 @@ class Translator(private val appContext: Context) {
     /** Status kesiapan file per pasangan (dipakai UI). */
     fun ready(pair: String): Boolean {
         val d = pairDir(pair)
+        val splitOk = File(d, "encoder_int8.onnx").length() > 1_000_000 &&
+            File(d, "decoder_int8.onnx").length() > 1_000_000 &&
+            File(d, "decoder_with_past_int8.onnx").length() > 1_000_000 &&
+            File(d, "tokenizer.json").length() > 100_000
+        if (splitOk) return true
+        // Fallback lawas: merged tunggal.
         return File(d, "encoder_int8.onnx").length() > 1_000_000 &&
             File(d, "decoder_merged_int8.onnx").length() > 1_000_000 &&
             File(d, "tokenizer.json").length() > 100_000
@@ -38,12 +44,24 @@ class Translator(private val appContext: Context) {
     fun ensureAssets(pair: String) {
         val d = pairDir(pair)
         copyAsset("mt/$pair/encoder_int8.onnx", File(d, "encoder_int8.onnx"))
-        copyAsset("mt/$pair/decoder_merged_int8.onnx", File(d, "decoder_merged_int8.onnx"))
         copyAsset("mt/$pair/tokenizer.json", File(d, "tokenizer.json"))
+        // Jalur utama: decoder terpisah (tanpa node If).
+        copyAssetQuiet("mt/$pair/decoder_int8.onnx", File(d, "decoder_int8.onnx"))
+        copyAssetQuiet("mt/$pair/decoder_with_past_int8.onnx", File(d, "decoder_with_past_int8.onnx"))
+        // Fallback lawas bila APK lama (hanya merged).
+        copyAssetQuiet("mt/$pair/decoder_merged_int8.onnx", File(d, "decoder_merged_int8.onnx"))
         if (!ready(pair)) {
             throw RuntimeException(
                 "Model $pair belum terbundel. Build ulang via GitHub Action."
             )
+        }
+    }
+
+    private fun copyAssetQuiet(assetPath: String, dst: File) {
+        try {
+            copyAsset(assetPath, dst)
+        } catch (_: Throwable) {
+            // Opsional: boleh absen bila jalur lain lengkap.
         }
     }
 
@@ -73,7 +91,8 @@ class Translator(private val appContext: Context) {
         tokKoEn = tokenizer("ko-en", 65000)
         return MarianMt(
             File(d, "encoder_int8.onnx"),
-            File(d, "decoder_merged_int8.onnx"),
+            splitOrNull(d),
+            mergedOrNull(d),
             tokKoEn!!,
         ).also { koEn = it }
     }
@@ -86,9 +105,23 @@ class Translator(private val appContext: Context) {
         tokEnId = tokenizer("en-id", 54795)
         return MarianMt(
             File(d, "encoder_int8.onnx"),
-            File(d, "decoder_merged_int8.onnx"),
+            splitOrNull(d),
+            mergedOrNull(d),
             tokEnId!!,
         ).also { enId = it }
+    }
+
+    private fun splitOrNull(d: File): MarianMt.SplitFiles? {
+        val a = File(d, "decoder_int8.onnx")
+        val b = File(d, "decoder_with_past_int8.onnx")
+        return if (a.length() > 1_000_000 && b.length() > 1_000_000) {
+            MarianMt.SplitFiles(a, b)
+        } else null
+    }
+
+    private fun mergedOrNull(d: File): File? {
+        val m = File(d, "decoder_merged_int8.onnx")
+        return if (m.length() > 1_000_000) m else null
     }
 
     /** Terjemahkan teks multi-baris; baris kosong dipertahankan. */
