@@ -88,46 +88,21 @@ jobs:
           fi
           keytool -list -keystore keystore/groox-release.jks -storepass 161105 | head -n 5
 
-      # ---- Model terjemahan MarianMT INT8 (Xenova, dibundel ke APK) ----
-      # ko-en + en-id (ko-id = rantai keduanya). Tanpa unduhan runtime.
-      # Decoder TERPISAH (tanpa node If) = jalur utama; merged = fallback.
-      - name: Download MT INT8 models into assets
+      # ---- Model MiGAN inpainting (dibundel ke APK, tanpa unduhan runtime) ----
+      # Pipeline v2 uint8: image [1,3,H,W] + mask [1,1,H,W] (255=keep, 0=inpaint).
+      - name: Download MiGAN into assets
         run: |
           set -eux
-          mkdir -p app/src/main/assets/mt/ko-en app/src/main/assets/mt/en-id
-          curl -fL -o app/src/main/assets/mt/ko-en/encoder_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/encoder_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/ko-en/decoder_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/decoder_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/ko-en/decoder_with_past_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/decoder_with_past_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/ko-en/decoder_merged_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/onnx/decoder_model_merged_int8.onnx
-          curl -fL -o app/src/main/assets/mt/ko-en/tokenizer.json \
-            https://huggingface.co/Xenova/opus-mt-ko-en/resolve/main/tokenizer.json
-          curl -fL -o app/src/main/assets/mt/en-id/encoder_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/encoder_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/en-id/decoder_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/decoder_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/en-id/decoder_with_past_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/decoder_with_past_model_int8.onnx
-          curl -fL -o app/src/main/assets/mt/en-id/decoder_merged_int8.onnx \
-            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/onnx/decoder_model_merged_int8.onnx
-          curl -fL -o app/src/main/assets/mt/en-id/tokenizer.json \
-            https://huggingface.co/Xenova/opus-mt-en-id/resolve/main/tokenizer.json
-          ls -la app/src/main/assets/mt/ko-en app/src/main/assets/mt/en-id
+          mkdir -p app/src/main/assets/migan
+          curl -fL -o app/src/main/assets/migan/migan_pipeline_v2.onnx \
+            https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx
+          ls -la app/src/main/assets/migan
           python3 - <<'EOF'
           import os
-          for d in ["app/src/main/assets/mt/ko-en", "app/src/main/assets/mt/en-id"]:
-              for f, lo in [("encoder_int8.onnx", 5_000_000),
-                            ("decoder_int8.onnx", 5_000_000),
-                            ("decoder_with_past_int8.onnx", 5_000_000),
-                            ("decoder_merged_int8.onnx", 5_000_000),
-                            ("tokenizer.json", 100_000)]:
-                  p = os.path.join(d, f)
-                  sz = os.path.getsize(p)
-                  assert sz > lo, f"{p} too small: {sz}"
-                  print(p, sz)
+          p = "app/src/main/assets/migan/migan_pipeline_v2.onnx"
+          sz = os.path.getsize(p)
+          assert sz > 5_000_000, f"{p} too small: {sz}"
+          print(p, sz)
           EOF
 
       - name: Build debug APK

@@ -14,10 +14,12 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
   standar, dibuka semua reader) + **PDF → JPG**. Semua output bisa di-rename.
 - **Tab Gambar**: **gabung vertikal** (lebar disamakan, panjang & kualitas
   custom, output JPG + ZIP), **pisah vertikal** (jumlah/tinggi custom),
-  **smart watermark** (teks/logo, hindari area ramai & bubble, pratinjau).
-  Full offline.
-- **Tab Terjemah**: offline (MarianMT INT8) — ketik/paste atau file TXT.
-  KO→EN, EN→ID, KO→ID (rantai). Salin/bagikan/simpan TXT.
+  **smart watermark** (teks/logo, hindari area ramai & bubble, pratinjau),
+  **unwatermark** (port remover v1.4.0 + pratinjau + geser). Full offline.
+- **Tab Bersih**: hapus teks terpilih — deteksi PP-OCR (bahasa pilih) →
+  pratinjau + centang kata → solid diisi warna sekitar, gradasi via difusi
+  Laplace (tanpa model), tekstur via MiGAN. Output ZIP = jumlah gambar +
+  pratinjau sesudah/sebelum.
 
 ## Arsitektur model
 
@@ -35,12 +37,13 @@ APK mobile **Kotlin + Jetpack Compose** (minSdk 28 / Android 9+) dengan dua tab:
 > Korea v5-mobile **hanya untuk Hangul**. Tanpa modul ini, manhwa Korea tidak
 > akan terbaca.
 
-Sumber model (diunduh OTOMATIS oleh GitHub Action ke `assets/models/`
+Sumber model (diunduh OTOMATIS oleh GitHub Action ke assets
 sebelum build — ter-bundel di APK, tanpa unduhan runtime, tanpa internet):
 
-- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
-- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
-- https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx
+- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx → `assets/models/`
+- https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx → `assets/models/`
+- https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx → `assets/models/`
+- https://huggingface.co/andraniksargsyan/migan (`migan_pipeline_v2.onnx`) → `assets/migan/`
 
 Dict dibundel di `app/src/main/assets/`:
 `dict_v6_small.txt` (18.708), `dict_korean_v5.txt` (11.945).
@@ -86,8 +89,10 @@ app/src/main/java/com/groox/ocr/
   ui/viewmodel/OcrViewModel.kt, ui/viewmodel/PdfViewModel.kt
   pdf/PdfWriter.kt, ImageToPdf.kt, PdfCompressor.kt, PdfShare.kt,
   PdfCrypt.kt, PdfToJpg.kt, ZipKit.kt
-  image/CombineImage.kt, SplitImage.kt, Watermark.kt
-  ui/screens/ImageToolsScreen.kt, ui/viewmodel/ImageToolsViewModel.kt
+  image/CombineImage.kt, SplitImage.kt, Watermark.kt, Unwatermark.kt,
+  InpaintKit.kt, MiganMt.kt, CleanEngine.kt
+  ui/screens/ImageToolsScreen.kt, ui/screens/CleanScreen.kt,
+  ui/viewmodel/ImageToolsViewModel.kt, ui/viewmodel/CleanViewModel.kt
   util/ExportUtils.kt
 ```
 
