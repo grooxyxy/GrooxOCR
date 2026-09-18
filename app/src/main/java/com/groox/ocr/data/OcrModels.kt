@@ -76,7 +76,7 @@ data class OcrParams(
     /** Long side for detection resize. 1280 = good balance for 720-wide strips. */
     val detLongSide: Int = 1280,
     val boxThresh: Float = OcrModels.DB_BOX_THRESH,
-    val recThresh: Float = 0.3f,
+    val recThresh: Float = 0.45f, // saring garbage SFX (skor proxy sigmoid rendah)
     /** Bubble grouping: expand boxes before union (px + fraction of height). */
     val bubblePadPx: Int = 12,
     val bubblePadRatio: Float = 0.08f,

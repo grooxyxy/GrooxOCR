@@ -17,7 +17,11 @@ object DictLoader {
             // Only strip trailing \r; a truly empty line is kept as empty token
             // but trailing file newline is ignored.
             val lines = r.readLines().map { it.trimEnd('\r') }
-            return if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
+            val trimmed = if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
+            // Paddle menaruh token SPASI sebagai baris KOSONG di tengah dict
+            // (mis. baris 1749 di dict v6-small). Tanpa konversi ini decoder
+            // membuang token kosong -> semua spasi hilang ("idon'thave").
+            return trimmed.map { if (it.isEmpty()) " " else it }
         }
     }
 

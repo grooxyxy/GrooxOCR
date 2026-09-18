@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Image
@@ -44,13 +43,11 @@ import com.groox.ocr.ui.screens.HomeScreen
 import com.groox.ocr.ui.screens.ImageToolsScreen
 import com.groox.ocr.ui.screens.PdfScreen
 import com.groox.ocr.ui.screens.ResultScreen
-import com.groox.ocr.ui.screens.CleanScreen
 import com.groox.ocr.ui.theme.GrooxTheme
 import com.groox.ocr.ui.viewmodel.OcrUiState
 import com.groox.ocr.ui.viewmodel.ImageToolsViewModel
 import com.groox.ocr.ui.viewmodel.OcrViewModel
 import com.groox.ocr.ui.viewmodel.PdfViewModel
-import com.groox.ocr.ui.viewmodel.CleanViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -66,8 +63,6 @@ class MainActivity : ComponentActivity() {
                         OcrViewModel(app.modelManager, app.ocrEngine) as T
                     PdfViewModel::class.java -> PdfViewModel() as T
                     ImageToolsViewModel::class.java -> ImageToolsViewModel() as T
-                    CleanViewModel::class.java ->
-                        CleanViewModel(app, app.ocrEngine, app.migan) as T
                     else -> throw IllegalArgumentException(modelClass.name)
                 }
             }
@@ -117,12 +112,6 @@ class MainActivity : ComponentActivity() {
                                 Tab(
                                     selected = tab == 3,
                                     onClick = { tab = 3 },
-                                    text = { Text("Bersih") },
-                                    icon = { Icon(Icons.Filled.AutoFixHigh, null) },
-                                )
-                                Tab(
-                                    selected = tab == 4,
-                                    onClick = { tab = 4 },
                                     text = { Text("Donasi") },
                                     icon = { Icon(Icons.Filled.Favorite, null) },
                                 )
@@ -214,9 +203,6 @@ class MainActivity : ComponentActivity() {
                         } else if (tab == 2) {
                             val tvm: ImageToolsViewModel = viewModel(factory = factory)
                             ImageToolsScreen(vm = tvm)
-                        } else if (tab == 3) {
-                            val cvm: CleanViewModel = viewModel(factory = factory)
-                            CleanScreen(vm = cvm)
                         } else {
                             DonateScreen()
                         }

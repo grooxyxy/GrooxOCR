@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -248,26 +251,37 @@ private fun ImageResultCard(item: BatchItem) {
             val preview by produceState<Bitmap?>(initialValue = null, item.uri) {
                 value = withContext(Dispatchers.IO) { decodePreviewBitmap(appCtx, item.uri) }
             }
+            // Preview FIT-LEBAR kolom + scrollable vertikal (strip 16000px+).
+            // Box dalam memakai aspectRatio persis rasio gambar -> matematika
+            // Fit overlay tetap akurat (tanpa letterbox, dx=dy=0).
+            val previewScroll = rememberScrollState()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(420.dp)
+                    .height(480.dp)
+                    .verticalScroll(previewScroll)
                     .clipToBounds()
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 val pb = preview
                 if (pb != null) {
-                    Image(
-                        bitmap = pb.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    OcrOverlay(
-                        boxes = result.bubbles.map { it.rect },
-                        imageWidth = result.imageWidth,
-                        imageHeight = result.imageHeight,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(pb.width.toFloat() / pb.height.toFloat()),
+                    ) {
+                        Image(
+                            bitmap = pb.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.FillBounds,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        OcrOverlay(
+                            boxes = result.bubbles.map { it.rect },
+                            imageWidth = result.imageWidth,
+                            imageHeight = result.imageHeight,
+                        )
+                    }
                 } else {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
@@ -302,14 +316,14 @@ private fun BubbleCard(
     }
 }
 
-/** Decode preview yang aman memori: maks ~1080px lebar / ~2400px tinggi. */
+/** Decode preview yang aman memori: maks ~1080px lebar / ~6000px tinggi (RGB565 ~13MB). */
 private fun decodePreviewBitmap(ctx: Context, uri: android.net.Uri): Bitmap? {
     return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while (bounds.outWidth / sample > 1080 || bounds.outHeight / sample > 2400) sample *= 2
+        while (bounds.outWidth / sample > 1080 || bounds.outHeight / sample > 6000) sample *= 2
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.RGB_565

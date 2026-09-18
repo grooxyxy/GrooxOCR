@@ -16,7 +16,7 @@ import kotlin.math.sqrt
 object InpaintKit {
 
     enum class BgKind(val label: String) {
-        SOLID("solid"), GRADIENT("gradasi"), TEXTURED("tekstur/MiGAN")
+        SOLID("solid"), GRADIENT("gradasi"), TEXTURED("tekstur")
     }
 
     // ---------- util piksel ----------
@@ -119,7 +119,7 @@ object InpaintKit {
     /**
      * Klasifikasi dari RING di sekeliling box (d=10px, di luar box):
      * solid bila std rendah; gradasi bila cocok bidang linear sisa kecil;
-     * sisanya tekstur → MiGAN.
+     * sisanya diisi tekstur (sintesis lokal, tanpa model MiGAN).
      */
     fun classify(full: Bitmap, box: RectF, ringD: Int = 10): BgKind {
         val l = (box.left - ringD).toInt().coerceIn(0, full.width - 1)
