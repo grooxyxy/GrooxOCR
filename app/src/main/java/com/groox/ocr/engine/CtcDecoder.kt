@@ -42,6 +42,33 @@ object CtcDecoder {
             last = best
         }
         val score = if (kept == 0) 0f else (scoreSum / kept).toFloat()
-        return RecResult(sb.toString(), score)
+        return RecResult(postProcess(sb.toString()), score)
+    }
+
+    /**
+     * Post-process OCR mentah:
+     * 1. lowercase semua (permintaan user; tak berpengaruh ke CJK/Korea).
+     * 2. Perbaiki spasi hilang khas OCR: rapikan spasi ganda + sisipkan spasi
+     *    setelah tanda baca bila menempel huruf (mis. "pervert.hehe").
+     *    Dijaga agar angka desimal ("3.14") tidak rusak.
+     */
+    fun postProcess(raw: String): String {
+        var s = raw.lowercase().replace(Regex("\\s+"), " ").trim()
+        if (s.isEmpty()) return s
+        val sb = StringBuilder(s.length + 4)
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            sb.append(c)
+            if (c in ".,!?;:" && i + 1 < s.length) {
+                val nx = s[i + 1]
+                val pv = if (i > 0) s[i - 1] else ' '
+                val needSpace = nx != ' ' && nx.isLetter() &&
+                    !(pv.isDigit() && nx.isDigit())
+                if (needSpace) sb.append(' ')
+            }
+            i++
+        }
+        return sb.toString().replace(Regex(" {2,}"), " ").trim()
     }
 }

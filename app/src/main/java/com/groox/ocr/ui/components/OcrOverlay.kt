@@ -13,7 +13,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Overlay box bubble/line di atas preview.
- * [imageAspect] = width/height gambar asli; canvas di-scale seragam (fit-width).
+ * Gambar ditampilkan dengan ContentScale.Fit di dalam Box → ada bilah
+ * letterbox bila aspek tak pas. Overlay WAJIB memakai matematika Fit yang
+ * sama, kalau tidak kotak bergeser dari sasaran (bug yang dilaporkan).
  */
 @Composable
 fun OcrOverlay(
@@ -28,13 +30,15 @@ fun OcrOverlay(
     // fillMaxSize: Box pemanggil sudah berukuran aspek gambar; fillMaxWidth saja
     // membuat tinggi Canvas 0 sehingga box tidak terlihat.
     Canvas(modifier = modifier.fillMaxSize()) {
-        val sx = size.width / imageWidth
-        // Canvas height di caller sudah diatur proporsional; pakai sx untuk x & y.
+        // Matematika ContentScale.Fit: gambar diskala seragam + di tengah.
+        val scale = minOf(size.width / imageWidth, size.height / imageHeight)
+        val dx = (size.width - imageWidth * scale) / 2f
+        val dy = (size.height - imageHeight * scale) / 2f
         boxes.forEachIndexed { i, b ->
-            val left = b.left * sx
-            val top = b.top * sx
-            val w = b.width() * sx
-            val h = b.height() * sx
+            val left = dx + b.left * scale
+            val top = dy + b.top * scale
+            val w = b.width() * scale
+            val h = b.height() * scale
             drawRect(
                 color = boxColor,
                 topLeft = Offset(left, top),
