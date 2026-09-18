@@ -244,8 +244,9 @@ private fun ImageResultCard(item: BatchItem) {
             // Preview: decode manual dengan downsample (strip 720×16000+ melebihi
             // batas tekstur GPU sehingga loader async biasa menampilkan LAYAR KOSONG).
             // Tinggi Box tetap 420dp; overlay pakai matematika Fit yang sama.
+            val appCtx = LocalContext.current
             val preview by produceState<Bitmap?>(initialValue = null, item.uri) {
-                value = withContext(Dispatchers.IO) { decodePreviewBitmap(ctx, item.uri) }
+                value = withContext(Dispatchers.IO) { decodePreviewBitmap(appCtx, item.uri) }
             }
             Box(
                 modifier = Modifier
