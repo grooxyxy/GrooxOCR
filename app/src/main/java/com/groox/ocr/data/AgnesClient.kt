@@ -25,7 +25,7 @@ object AgnesClient {
 
     const val BASE_URL = "https://apihub.agnes-ai.com/v1"
     const val MODEL = "agnes-2.5-flash"
-    private const val ENDPOINT = "$BASE_URL/chat/completions"
+    private const val ENDPOINT = "https://apihub.agnes-ai.com/v1/chat/completions"
     private const val API_KEY = "sk-XSOMMlS3MQWpmtXzWIYSxR4BipnGHnbFZrMpZieAZi82U6kZ"
 
     private const val SYSTEM_PROMPT = """
