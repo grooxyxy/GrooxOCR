@@ -28,7 +28,7 @@ object AgnesClient {
     private const val ENDPOINT = "https://apihub.agnes-ai.com/v1/chat/completions"
     private const val API_KEY = "sk-XSOMMlS3MQWpmtXzWIYSxR4BipnGHnbFZrMpZieAZi82U6kZ"
 
-    private const val SYSTEM_PROMPT = """
+    private val SYSTEM_PROMPT = """
 Kamu adalah post-processor hasil OCR komik (manhwa/manga/manhua/webtoon).
 Tugasmu: menyusun teks OCR mentah menjadi hasil akhir PER DIALOG.
 
