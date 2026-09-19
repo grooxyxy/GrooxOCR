@@ -4,12 +4,14 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.groox.ocr.data.AgnesClient
 import com.groox.ocr.data.ImageTiling
 import com.groox.ocr.data.ModelManager
 import com.groox.ocr.data.OcrParams
 import com.groox.ocr.data.ReadingOrder
 import com.groox.ocr.data.RecMode
 import com.groox.ocr.engine.OcrEngine
+import com.groox.ocr.util.ExportUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,14 @@ sealed interface OcrUiState {
     data class Error(val message: String) : OcrUiState
 }
 
+/** State fitur AI (agnes-2.5-flash) untuk menyusun hasil OCR per dialog. */
+sealed interface AiUiState {
+    data object Idle : AiUiState
+    data object Working : AiUiState
+    data class Done(val text: String, val model: String, val elapsedMs: Long) : AiUiState
+    data class Error(val message: String) : AiUiState
+}
+
 class OcrViewModel(
     private val models: ModelManager,
     private val engine: OcrEngine,
@@ -36,6 +46,9 @@ class OcrViewModel(
     private val _ui = MutableStateFlow<OcrUiState>(OcrUiState.Idle)
     val ui: StateFlow<OcrUiState> = _ui
 
+    private val _ai = MutableStateFlow<AiUiState>(AiUiState.Idle)
+    val ai: StateFlow<AiUiState> = _ai
+
     private val _picked = MutableStateFlow<List<PickedOcrImage>>(emptyList())
     val picked: StateFlow<List<PickedOcrImage>> = _picked
 
@@ -43,16 +56,17 @@ class OcrViewModel(
     val params: StateFlow<OcrParams> = _params
 
     private var job: Job? = null
+    private var aiJob: Job? = null
 
     fun setRecMode(m: RecMode) { _params.value = _params.value.copy(recMode = m) }
     fun setReadingOrder(o: ReadingOrder) { _params.value = _params.value.copy(readingOrder = o) }
     fun setDetLongSide(v: Int) { _params.value = _params.value.copy(detLongSide = v) }
     fun setBoxThresh(v: Float) { _params.value = _params.value.copy(boxThresh = v) }
 
-    fun installModels(includeKorean: Boolean = true) {
+    fun installModels() {
         viewModelScope.launch {
             try {
-                models.ensureModels(includeKorean)
+                models.ensureModels()
             } catch (t: Throwable) {
                 _ui.value = OcrUiState.Error(t.message ?: t.toString())
             }
@@ -94,7 +108,7 @@ class OcrViewModel(
         job = viewModelScope.launch {
             try {
                 // Model sudah dibundel di APK; install = salin dari assets (tanpa internet).
-                models.ensureModels(includeKorean = _params.value.recMode != RecMode.V6_ONLY)
+                models.ensureModels()
                 val out = mutableListOf<BatchItem>()
                 list.forEachIndexed { i, p ->
                     _ui.value = OcrUiState.Working("Gambar ${i + 1}/${list.size}: mulai…", i, list.size)
@@ -104,9 +118,39 @@ class OcrViewModel(
                     out.add(BatchItem(p.uri, res))
                 }
                 _ui.value = OcrUiState.DoneBatch(out)
+                _ai.value = AiUiState.Idle
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 _ui.value = OcrUiState.Error(t.message ?: t.toString())
+            }
+        }
+    }
+
+    /**
+     * Kirim teks hasil OCR (yang tampil) ke agnes-2.5-flash agar disusun
+     * SELALU per dialog — walau sumbernya bukan bubble dialog/kotak narasi.
+     * Butuh internet; OCR sendiri tetap offline.
+     */
+    fun runAiRefine() {
+        val s = _ui.value as? OcrUiState.DoneBatch ?: return
+        val raw = ExportUtils.batchBubblesToTxt(
+            s.items.map { it.result.bubbles },
+            ExportUtils.BubblePrefix.NONE,
+            "",
+        )
+        if (raw.isBlank()) {
+            _ai.value = AiUiState.Error("Tidak ada teks OCR untuk dikirim ke AI")
+            return
+        }
+        aiJob?.cancel()
+        aiJob = viewModelScope.launch {
+            _ai.value = AiUiState.Working
+            try {
+                val r = AgnesClient.refineOcr(raw)
+                _ai.value = AiUiState.Done(r.text, r.model, r.elapsedMs)
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _ai.value = AiUiState.Error(t.message ?: t.toString())
             }
         }
     }
@@ -117,5 +161,8 @@ class OcrViewModel(
     }
 
     /** Kembali ke daftar gambar (hasil batch dibuang). */
-    fun backToList() { _ui.value = OcrUiState.Idle }
+    fun backToList() {
+        _ui.value = OcrUiState.Idle
+        _ai.value = AiUiState.Idle
+    }
 }

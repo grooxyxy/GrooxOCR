@@ -11,10 +11,17 @@ import kotlinx.coroutines.withContext
 /**
  * Model ter-bundel di APK (via GitHub Action).
  *
- * CI mengunduh 3 file ONNX ke `app/src/main/assets/models/` SEBELUM build,
- * sehingga APK sudah berisi model — TIDAK ada unduhan runtime, TIDAK butuh
- * INTERNET. Saat pertama dibuka, model disalin dari assets (APK) ke
+ * CI mengunduh 5 file ONNX ke `app/src/main/assets/models/` SEBELUM build,
+ * sehingga APK sudah berisi model — TIDAK ada unduhan runtime untuk OCR.
+ * Saat pertama dibuka, model disalin dari assets (APK) ke
  * [Context.filesDir]/models agar bisa dibuka sebagai file oleh ONNX Runtime.
+ *
+ * Katalog:
+ *  - det      : PP-OCRv6-small det (semua mode)
+ *  - rec v6   : PP-OCRv6-small rec (auto 中文・日本語)
+ *  - rec ko   : PP-OCRv5 korean (한국어)
+ *  - rec en   : PP-OCRv5 en (English)
+ *  - rec latin: PP-OCRv5 latin (ES/VI/ID dsb.)
  */
 class ModelManager(private val appContext: Context) {
 
@@ -22,12 +29,15 @@ class ModelManager(private val appContext: Context) {
         val detReady: Boolean = false,
         val recV6Ready: Boolean = false,
         val recKoReady: Boolean = false,
+        val recEnReady: Boolean = false,
+        val recLatinReady: Boolean = false,
         val installing: String? = null,
         val progress: Float = 0f,
         val error: String? = null,
     ) {
-        val allReady: Boolean get() = detReady && recV6Ready && recKoReady
-        val primaryReady: Boolean get() = detReady && recV6Ready
+        val allReady: Boolean
+            get() = detReady && recV6Ready && recKoReady && recEnReady && recLatinReady
+        val primaryReady: Boolean get() = allReady
     }
 
     private val _state = MutableStateFlow(ModelState())
@@ -37,12 +47,37 @@ class ModelManager(private val appContext: Context) {
     fun detFile(): File = File(modelsDir(), OcrModels.DET_FILE)
     fun recV6File(): File = File(modelsDir(), OcrModels.REC_V6_FILE)
     fun recKoFile(): File = File(modelsDir(), OcrModels.REC_KO_FILE)
+    fun recEnFile(): File = File(modelsDir(), OcrModels.REC_EN_FILE)
+    fun recLatinFile(): File = File(modelsDir(), OcrModels.REC_LATIN_FILE)
+
+    /** (fileName, expectedSize) untuk semua model yang wajib terbundel. */
+    private fun allModels(): List<Pair<String, Long>> = listOf(
+        OcrModels.DET_FILE to OcrModels.DET_SIZE,
+        OcrModels.REC_V6_FILE to OcrModels.REC_V6_SIZE,
+        OcrModels.REC_KO_FILE to OcrModels.REC_KO_SIZE,
+        OcrModels.REC_EN_FILE to OcrModels.REC_EN_SIZE,
+        OcrModels.REC_LATIN_FILE to OcrModels.REC_LATIN_SIZE,
+    )
 
     fun refresh() {
-        _state.value = ModelState(
-            detReady = valid(detFile(), OcrModels.DET_SIZE),
-            recV6Ready = valid(recV6File(), OcrModels.REC_V6_SIZE),
-            recKoReady = valid(recKoFile(), OcrModels.REC_KO_SIZE),
+        _state.value = snapshot()
+    }
+
+    private fun snapshot(
+        installing: String? = null,
+        progress: Float = 0f,
+        error: String? = null,
+    ): ModelState {
+        fun v(name: String, expected: Long) = valid(File(modelsDir(), name), expected)
+        return ModelState(
+            detReady = v(OcrModels.DET_FILE, OcrModels.DET_SIZE),
+            recV6Ready = v(OcrModels.REC_V6_FILE, OcrModels.REC_V6_SIZE),
+            recKoReady = v(OcrModels.REC_KO_FILE, OcrModels.REC_KO_SIZE),
+            recEnReady = v(OcrModels.REC_EN_FILE, OcrModels.REC_EN_SIZE),
+            recLatinReady = v(OcrModels.REC_LATIN_FILE, OcrModels.REC_LATIN_SIZE),
+            installing = installing,
+            progress = progress,
+            error = error,
         )
     }
 
@@ -54,25 +89,24 @@ class ModelManager(private val appContext: Context) {
 
     /**
      * Salin model yang hilang dari assets/models/ ke filesDir/models/.
-     * Dipanggil sekali saat startup; tanpa internet.
+     * Dipanggil sekali saat startup / sebelum OCR; tanpa internet.
      */
-    suspend fun ensureModels(includeKorean: Boolean = true) = withContext(Dispatchers.IO) {
+    suspend fun ensureModels() = withContext(Dispatchers.IO) {
         try {
-            copyIfNeeded(OcrModels.DET_FILE, OcrModels.DET_SIZE)
-            copyIfNeeded(OcrModels.REC_V6_FILE, OcrModels.REC_V6_SIZE)
-            if (includeKorean) copyIfNeeded(OcrModels.REC_KO_FILE, OcrModels.REC_KO_SIZE)
+            for ((name, size) in allModels()) {
+                copyIfNeeded(name, size)
+            }
             refresh()
             val s = _state.value
-            if (!s.primaryReady) {
+            if (!s.allReady) {
                 throw RuntimeException(
-                    "Model tidak terbundel di APK ini. Build ulang via GitHub Action " +
-                        "(workflow android.yml mengunduh ONNX ke assets/models/)."
+                    "Model tidak terbundel lengkap di APK ini. Build ulang via GitHub Action " +
+                        "(workflow android.yml mengunduh 5 ONNX ke assets/models/)."
                 )
             }
         } catch (t: Throwable) {
             Log.e("ModelManager", "install failed", t)
-            val cur = _state.value
-            _state.value = cur.copy(installing = null, error = t.message ?: t.toString())
+            _state.value = snapshot(error = t.message ?: t.toString())
             throw t
         }
     }
@@ -81,7 +115,7 @@ class ModelManager(private val appContext: Context) {
         withContext(Dispatchers.IO) {
             val dst = File(modelsDir(), fileName)
             if (valid(dst, expected)) {
-                emitProgress(null, 1f)
+                _state.value = snapshot(null, 1f)
                 return@withContext
             }
             val assetPath = "models/$fileName"
@@ -97,7 +131,10 @@ class ModelManager(private val appContext: Context) {
                             out.write(buf, 0, n)
                             done += n
                             // Progress kasar berbasis ukuran ekspektasi.
-                            emitProgress(fileName, (done.toFloat() / expected).coerceIn(0f, 0.99f))
+                            _state.value = snapshot(
+                                fileName,
+                                (done.toFloat() / expected).coerceIn(0f, 0.99f),
+                            )
                         }
                     }
                 }
@@ -105,23 +142,11 @@ class ModelManager(private val appContext: Context) {
                 dst.delete()
                 throw RuntimeException("assets/$assetPath hilang di APK. $t")
             }
-            emitProgress(null, 1f)
+            _state.value = snapshot(null, 1f)
         }
 
     suspend fun deleteAll() = withContext(Dispatchers.IO) {
-        detFile().delete(); recV6File().delete(); recKoFile().delete()
+        for ((name, _) in allModels()) File(modelsDir(), name).delete()
         refresh()
-    }
-
-    private fun emitProgress(name: String?, p: Float) {
-        val cur = _state.value
-        _state.value = cur.copy(
-            detReady = valid(detFile(), OcrModels.DET_SIZE),
-            recV6Ready = valid(recV6File(), OcrModels.REC_V6_SIZE),
-            recKoReady = valid(recKoFile(), OcrModels.REC_KO_SIZE),
-            installing = name,
-            progress = p,
-            error = null,
-        )
     }
 }

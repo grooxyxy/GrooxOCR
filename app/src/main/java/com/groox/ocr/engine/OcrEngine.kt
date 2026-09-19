@@ -20,10 +20,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * End-to-end OCR orchestrator (PP-OCRv6-small primary).
+ * End-to-end OCR orchestrator.
+ *
+ * Detektor: PP-OCRv6-small (semua mode bahasa).
+ * Recognizer per [RecMode]:
+ *  - AUTO_CJK → PP-OCRv6-small rec (中文・日本語)
+ *  - KOREAN   → PP-OCRv5 korean rec
+ *  - ENGLISH  → PP-OCRv5 en rec
+ *  - LATIN    → PP-OCRv5 latin rec (ES/VI/ID)
  *
  * Flow: probe → tile plan → per-tile DET → global NMS → per-box REC
- * (dual v6/korean routing) → [BubbleGrouper] → [OcrResult].
+ * → [BubbleGrouper] → [OcrResult].
  *
  * All heavy work runs on Dispatchers.Default; progress via [onProgress].
  * Bitmaps are decoded per-tile / per-crop and recycled immediately so
@@ -39,7 +46,7 @@ class OcrEngine(
         val rect: RectF, // full-image coords
         val text: String,
         val score: Float,
-        val engine: String, // "v6" | "ko"
+        val engine: String, // "v6" | "ko" | "en" | "latin"
     )
 
     data class OcrResult(
@@ -57,29 +64,34 @@ class OcrEngine(
     ): OcrResult = withContext(Dispatchers.Default) {
         val t0 = System.currentTimeMillis()
         val info = ImageTiling.probe(appContext, uri)
-        Log.i("OcrEngine", "image ${info.width}x${info.height} mime=${info.mime}")
+        Log.i("OcrEngine", "image ${info.width}x${info.height} mime=${info.mime} mode=${params.recMode}")
 
-        // Dicts (bundled assets, tiny).
-        val dictV6 = DictLoader.loadV6(appContext)
-        val dictKo = if (params.recMode != RecMode.V6_ONLY) {
-            try { DictLoader.loadKorean(appContext) } catch (t: Throwable) {
-                Log.w("OcrEngine", "korean dict missing: $t"); emptyList()
-            }
-        } else emptyList()
+        // Dict sesuai mode (bundled assets, tiny).
+        val dict: List<String> = when (params.recMode) {
+            RecMode.AUTO_CJK -> DictLoader.loadV6(appContext)
+            RecMode.KOREAN -> DictLoader.loadKorean(appContext)
+            RecMode.ENGLISH -> DictLoader.loadEnglish(appContext)
+            RecMode.LATIN -> DictLoader.loadLatin(appContext)
+        }
 
-        // Sessions (lazy open; throws with clear msg if model missing).
+        // Model files + sessions sesuai mode (lazy open; throws bila model hilang).
         val detFile = fileOrThrow(models.detFile(), "deteksi v6-small — salin model dari APK dulu")
-        val recV6File = if (params.recMode != RecMode.KOREAN_ONLY)
-            fileOrThrow(models.recV6File(), "rekognisi v6-small — salin model dari APK dulu") else null
-        val recKoFile = if (params.recMode != RecMode.V6_ONLY)
-            fileOrThrow(models.recKoFile(), "rekognisi Korea — salin model dari APK dulu / pakai mode V6 only") else null
+        val (recFile, recTag) = when (params.recMode) {
+            RecMode.AUTO_CJK -> fileOrThrow(models.recV6File(), "rekognisi v6-small") to "v6"
+            RecMode.KOREAN -> fileOrThrow(models.recKoFile(), "rekognisi Korea v5") to "ko"
+            RecMode.ENGLISH -> fileOrThrow(models.recEnFile(), "rekognisi English v5") to "en"
+            RecMode.LATIN -> fileOrThrow(models.recLatinFile(), "rekognisi Latin v5") to "latin"
+        }
 
         val detSession = sessions.detSession(detFile)
         val detInputName = detSession.inputNames.first()
-        val recV6Session = recV6File?.let { sessions.recV6Session(it) }
-        val recV6Input = recV6Session?.inputNames?.first()
-        val recKoSession = recKoFile?.let { sessions.recKoSession(it) }
-        val recKoInput = recKoSession?.inputNames?.first()
+        val recSession = when (params.recMode) {
+            RecMode.AUTO_CJK -> sessions.recV6Session(recFile)
+            RecMode.KOREAN -> sessions.recKoSession(recFile)
+            RecMode.ENGLISH -> sessions.recEnSession(recFile)
+            RecMode.LATIN -> sessions.recLatinSession(recFile)
+        }
+        val recInput = recSession.inputNames.first()
 
         // ---- 1) Tiled detection ----
         val tiles = ImageTiling.planTiles(info.width, info.height, params.tileHeight, params.tileOverlap)
@@ -130,10 +142,7 @@ class OcrEngine(
             onProgress("Baca ${bi + 1}/${merged.size}", bi, merged.size)
             val crop = cropBox(uri, info.width, info.height, box.rect) ?: return@forEachIndexed
             try {
-                val rec = recognizeBox(
-                    crop, params, dictV6, dictKo,
-                    recV6Session, recV6Input, recKoSession, recKoInput,
-                )
+                val rec = recognizeBox(crop, recSession, recInput, dict, recTag)
                 if (rec != null && rec.text.isNotBlank() && rec.score >= params.recThresh) {
                     lines.add(OcrLine(box.rect, rec.text, rec.score, rec.engine))
                 }
@@ -167,50 +176,19 @@ class OcrEngine(
 
     private fun recognizeBox(
         crop: Bitmap,
-        params: OcrParams,
-        dictV6: List<String>,
-        dictKo: List<String>,
-        recV6Session: OrtSession?,
-        recV6Input: String?,
-        recKoSession: OrtSession?,
-        recKoInput: String?,
+        recSession: OrtSession,
+        recInput: String,
+        dict: List<String>,
+        tag: String,
     ): RecPick? {
         // Handle vertical text: rotate tall crops to horizontal.
         val oriented = orientForRec(crop)
         try {
-            var best: RecPick? = null
-            if ((params.recMode == RecMode.V6_ONLY || params.recMode == RecMode.AUTO) &&
-                recV6Session != null && recV6Input != null && dictV6.isNotEmpty()
-            ) {
-                val r = runRec(oriented, recV6Session, recV6Input, dictV6, "v6")
-                best = pickBetter(best, r)
-            }
-            if ((params.recMode == RecMode.KOREAN_ONLY || params.recMode == RecMode.AUTO) &&
-                recKoSession != null && recKoInput != null && dictKo.isNotEmpty()
-            ) {
-                val r = runRec(oriented, recKoSession, recKoInput, dictKo, "ko")
-                best = pickBetter(best, r)
-            }
-            return best
+            if (dict.isEmpty()) return null
+            return runRec(oriented, recSession, recInput, dict, tag)
         } finally {
             if (oriented !== crop) oriented.recycle()
         }
-    }
-
-    private fun pickBetter(a: RecPick?, b: RecPick?): RecPick? {
-        if (a == null) return b
-        if (b == null) return a
-        // Prefer Hangul-containing result when scores are close (manhwa case).
-        val aKo = DictLoader.containsHangul(a.text)
-        val bKo = DictLoader.containsHangul(b.text)
-        if (aKo != bKo) {
-            // If one has Hangul and its score is within 0.25, trust the Hangul one
-            // (v6-small outputs garbage latin on Hangul with inflated scores sometimes,
-            //  but korean model is authoritative for Hangul).
-            if (bKo && b.score + 0.25f >= a.score) return b
-            if (aKo && a.score + 0.25f >= b.score) return a
-        }
-        return if (b.score > a.score) b else a
     }
 
     private fun runRec(
@@ -299,8 +277,6 @@ class OcrEngine(
         val r = (box.right + padX).toInt().coerceIn(l + 8, imgW)
         val b = (box.bottom + padY).toInt().coerceIn(t + 8, imgH)
         if (r - l < 8 || b - t < 8) return null
-        // Guard absurd crops (full-width banners mis-detected): cap to 1200px wide.
-        // Taller than that is handled by rec resize anyway.
         val rect = Rect(l, t, r, b)
         return try {
             appContext.contentResolver.openInputStream(uri)?.use { ins ->

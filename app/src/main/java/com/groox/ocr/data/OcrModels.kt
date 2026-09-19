@@ -1,10 +1,13 @@
 package com.groox.ocr.data
 
 /**
- * Model catalogue — PP-OCRv6-small is PRIMARY as requested.
+ * Model catalogue — 4 bahasa / 4 recognizer:
+ *  - Korea        : PP-OCRv5 korean (mobile rec)
+ *  - English      : PP-OCRv5 en (mobile rec)
+ *  - Auto 中文・日本語 : PP-OCRv6-small (det + rec)
+ *  - Latin ES/VI/ID  : PP-OCRv5 latin (mobile rec)
  *
- * Korean is NOT covered by v6-small (dict has 0 Hangul; see README).
- * korean_PP-OCRv5_mobile_rec is a companion ONLY for Hangul routing.
+ * Detektor tunggal: PP-OCRv6-small det (dipakai semua mode).
  *
  * Semua model di-BUNDEL ke APK oleh GitHub Action (lihat
  * .github/workflows/android.yml yang mengunduh URL di bawah ke
@@ -14,6 +17,8 @@ object OcrModels {
     const val DET_FILE = "ppocrv6_small_det.onnx"
     const val REC_V6_FILE = "ppocrv6_small_rec.onnx"
     const val REC_KO_FILE = "korean_v5_mobile_rec.onnx"
+    const val REC_EN_FILE = "en_v5_mobile_rec.onnx"
+    const val REC_LATIN_FILE = "latin_v5_mobile_rec.onnx"
     /** Subfolder assets tempat CI menaruh model. */
     const val ASSET_DIR = "models"
 
@@ -23,14 +28,22 @@ object OcrModels {
         "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx"
     const val REC_KO_URL =
         "https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx"
+    const val REC_EN_URL =
+        "https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx"
+    const val REC_LATIN_URL =
+        "https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx"
 
     // Approximate sizes for progress/validation (bytes).
     const val DET_SIZE = 9_880_512L
     const val REC_V6_SIZE = 21_159_378L
     const val REC_KO_SIZE = 13_418_787L
+    const val REC_EN_SIZE = 7_848_423L
+    const val REC_LATIN_SIZE = 8_042_023L
 
     const val DICT_V6_ASSET = "dict_v6_small.txt"
     const val DICT_KO_ASSET = "dict_korean_v5.txt"
+    const val DICT_EN_ASSET = "dict_en_v5.txt"
+    const val DICT_LATIN_ASSET = "dict_latin_v5.txt"
 
     /** PP-OCRv6-small detection input spec (from inference.yml). */
     const val DET_MEAN_R = 0.485f
@@ -53,14 +66,16 @@ object OcrModels {
     const val REC_MAX_W = 1024
 }
 
-/** Language routing for the dual recognizer. */
+/** Mode bahasa → recognizer yang dipakai (det selalu PP-OCRv6-small). */
 enum class RecMode(val label: String) {
-    /** Only PP-OCRv6-small rec (EN/ZH/JA/Latin). Fastest. */
-    V6_ONLY("V6 only (EN・中文・日本語)"),
-    /** Only Korean v5-mobile rec (KO/EN). */
-    KOREAN_ONLY("Korea only (한국어)"),
-    /** Run both, pick higher score per box. Default for manhwa/manga. */
-    AUTO("Auto (v6 + Korea)"),
+    /** PP-OCRv6-small rec — auto Chinese/Japanese (juga basis CJK umum). */
+    AUTO_CJK("Auto 中文・日本語 (PP-OCRv6-small)"),
+    /** PP-OCRv5 korean rec. */
+    KOREAN("Korea (PP-OCRv5 한국어)"),
+    /** PP-OCRv5 en rec. */
+    ENGLISH("English (PP-OCRv5 EN)"),
+    /** PP-OCRv5 latin rec — Spanish/Vietnamese/Indonesian dsb. */
+    LATIN("Latin ES/VI/ID (PP-OCRv5)"),
 }
 
 /** Reading order inside/across bubbles. */
@@ -71,7 +86,7 @@ enum class ReadingOrder(val label: String) {
 
 /** Tunable OCR parameters (persisted via SavedState/ViewModel, not DataStore to keep deps small). */
 data class OcrParams(
-    val recMode: RecMode = RecMode.AUTO,
+    val recMode: RecMode = RecMode.AUTO_CJK,
     val readingOrder: ReadingOrder = ReadingOrder.TOP_TO_BOTTOM_LTR,
     /** Long side for detection resize. 1280 = good balance for 720-wide strips. */
     val detLongSide: Int = 1280,

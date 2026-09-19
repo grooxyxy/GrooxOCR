@@ -12,8 +12,8 @@ android {
         applicationId = "com.groox.ocr"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.1-v6small"
+        versionCode = 2
+        versionName = "1.1.0-v5v6-agnes"
 
         // ONNX Runtime Android ships arm64-v8a + armeabi-v7a.
         // x86_64 only needed for emulator; keep both ABIs for release.
@@ -97,9 +97,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // OCR inference — PP-OCRv6-small ONNX via ONNX Runtime Mobile.
-    // 1.22.0 = stable, minSdk 28 OK, NNAPI + XNNPACK CPU.
+    // OCR inference — PP-OCRv6-small + PP-OCRv5 (korean/en/latin) ONNX
+    // via ONNX Runtime Mobile. 1.22.0 = stable, minSdk 28 OK, NNAPI + XNNPACK CPU.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
+
+    // JSON untuk klien AI (agnes-2.5-flash, OpenAI-compatible chat completions).
+    implementation("org.json:json:20240303")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

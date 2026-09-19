@@ -50,9 +50,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.groox.ocr.data.AgnesClient
 import com.groox.ocr.engine.BubbleGrouper
 import com.groox.ocr.engine.OcrEngine
 import com.groox.ocr.ui.components.OcrOverlay
+import com.groox.ocr.ui.viewmodel.AiUiState
 import com.groox.ocr.ui.viewmodel.BatchItem
 import com.groox.ocr.util.ExportUtils
 import com.groox.ocr.util.ExportUtils.BubblePrefix
@@ -61,14 +63,18 @@ import com.groox.ocr.util.ExportUtils.BubblePrefix
  * Hasil OCR batch:
  * - tiap bubble = 1 baris, dengan awalan pilihan user (-, •, >, nomor),
  * - tiap bubble bisa dihapus (ada tombol kembalikan),
- * - tombol "Salin semua" menyalin SEKALIGUS semua teks yang tampil.
+ * - tombol "Salin semua" menyalin SEKALIGUS semua teks yang tampil,
+ * - tombol "AI: susun per dialog" mengirim teks ke agnes-2.5-flash yang
+ *   SELALU mengembalikan hasil per dialog walau sumbernya bukan bubble/narasi.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultScreen(
     items: List<BatchItem>,
+    aiState: AiUiState,
     onBack: () -> Unit,
     onCopyAll: (String) -> Unit,
+    onAiRefine: () -> Unit,
 ) {
     val ctx = LocalContext.current
     var idx by remember { mutableIntStateOf(0) }
@@ -111,6 +117,74 @@ fun ResultScreen(
                 }
             }
         }
+
+        // ---- AI: susun per dialog (agnes-2.5-flash) ----
+        item {
+            Button(
+                onClick = onAiRefine,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = allTxt.isNotBlank() && aiState !is AiUiState.Working,
+            ) {
+                Text("✨ AI: susun per dialog (${AgnesClient.MODEL})")
+            }
+        }
+        when (aiState) {
+            is AiUiState.Working -> item {
+                Card {
+                    Row(
+                        Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator()
+                        Text("AI sedang menyusun dialog… (butuh internet)")
+                    }
+                }
+            }
+            is AiUiState.Error -> item {
+                Text(
+                    "AI gagal: ${aiState.message}",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            is AiUiState.Done -> item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            "Hasil AI per dialog — ${aiState.model} • ${aiState.elapsedMs} ms",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(aiState.text)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { copyText(ctx, aiState.text) }) {
+                                Text("Salin hasil AI")
+                            }
+                            TextButton(
+                                onClick = {
+                                    ctx.startActivity(
+                                        Intent.createChooser(
+                                            Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, aiState.text)
+                                            },
+                                            "Bagikan",
+                                        )
+                                    )
+                                },
+                            ) { Text("Bagikan") }
+                        }
+                    }
+                }
+            }
+            AiUiState.Idle -> Unit
+        }
+
         if (items.size > 1) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

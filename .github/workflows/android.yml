@@ -37,24 +37,31 @@ jobs:
           gradle-version: 8.7
 
       # ---- Model dibundel ke APK saat build (tanpa unduhan runtime) ----
-      # PP-OCRv6-small = utama (det + rec). Korea v5-mobile = pendamping Hangul.
+      # Detektor tunggal : PP-OCRv6-small det (semua bahasa).
+      # Recognizer       : v6-small (auto 中文・日本語), korean v5, en v5, latin v5 (ES/VI/ID).
       - name: Download ONNX models into assets
         run: |
           set -eux
           mkdir -p app/src/main/assets/models
           cd app/src/main/assets/models
-          curl -fL -o ppocrv6_small_det.onnx \
+          curl -fL --retry 3 -o ppocrv6_small_det.onnx \
             https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx
-          curl -fL -o ppocrv6_small_rec.onnx \
+          curl -fL --retry 3 -o ppocrv6_small_rec.onnx \
             https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx
-          curl -fL -o korean_v5_mobile_rec.onnx \
+          curl -fL --retry 3 -o korean_v5_mobile_rec.onnx \
             https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx
+          curl -fL --retry 3 -o en_v5_mobile_rec.onnx \
+            https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx
+          curl -fL --retry 3 -o latin_v5_mobile_rec.onnx \
+            https://huggingface.co/PaddlePaddle/latin_PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx
           ls -la
           python3 - <<'EOF'
           import os
           for f, lo in [("ppocrv6_small_det.onnx", 5_000_000),
                         ("ppocrv6_small_rec.onnx", 10_000_000),
-                        ("korean_v5_mobile_rec.onnx", 5_000_000)]:
+                        ("korean_v5_mobile_rec.onnx", 5_000_000),
+                        ("en_v5_mobile_rec.onnx", 3_000_000),
+                        ("latin_v5_mobile_rec.onnx", 3_000_000)]:
               sz = os.path.getsize(f)
               assert sz > lo, f"{f} too small: {sz}"
               print(f, sz)

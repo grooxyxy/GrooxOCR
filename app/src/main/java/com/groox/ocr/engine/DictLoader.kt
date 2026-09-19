@@ -10,6 +10,8 @@ import com.groox.ocr.data.OcrModels
 object DictLoader {
     fun loadV6(ctx: Context): List<String> = loadAsset(ctx, OcrModels.DICT_V6_ASSET)
     fun loadKorean(ctx: Context): List<String> = loadAsset(ctx, OcrModels.DICT_KO_ASSET)
+    fun loadEnglish(ctx: Context): List<String> = loadAsset(ctx, OcrModels.DICT_EN_ASSET)
+    fun loadLatin(ctx: Context): List<String> = loadAsset(ctx, OcrModels.DICT_LATIN_ASSET)
 
     private fun loadAsset(ctx: Context, name: String): List<String> {
         ctx.assets.open(name).bufferedReader(Charsets.UTF_8).use { r ->

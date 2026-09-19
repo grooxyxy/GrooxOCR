@@ -9,7 +9,8 @@ import java.nio.FloatBuffer
 import java.util.Collections
 
 /**
- * Owns ORT environment + up to 3 sessions (det, rec-v6, rec-ko).
+ * Owns ORT environment + sessions: det (v6-small) + 4 recognizer
+ * (v6-small CJK, korean v5, en v5, latin v5).
  * Sessions are opened lazily and reused across tiles/boxes.
  *
  * Threading: 4 intra-op threads, CPU (XNNPACK). NNAPI is attempted first
@@ -22,6 +23,8 @@ class OrtSessions : AutoCloseable {
     private var det: OrtSession? = null
     private var recV6: OrtSession? = null
     private var recKo: OrtSession? = null
+    private var recEn: OrtSession? = null
+    private var recLatin: OrtSession? = null
     private val lock = Any()
 
     fun detSession(model: File): OrtSession = synchronized(lock) {
@@ -34,6 +37,14 @@ class OrtSessions : AutoCloseable {
 
     fun recKoSession(model: File): OrtSession = synchronized(lock) {
         recKo ?: open(model, tryNnapi = false).also { recKo = it }
+    }
+
+    fun recEnSession(model: File): OrtSession = synchronized(lock) {
+        recEn ?: open(model, tryNnapi = false).also { recEn = it }
+    }
+
+    fun recLatinSession(model: File): OrtSession = synchronized(lock) {
+        recLatin ?: open(model, tryNnapi = false).also { recLatin = it }
     }
 
     private fun open(model: File, tryNnapi: Boolean): OrtSession {
@@ -129,7 +140,9 @@ class OrtSessions : AutoCloseable {
             try { det?.close() } catch (_: Exception) {}
             try { recV6?.close() } catch (_: Exception) {}
             try { recKo?.close() } catch (_: Exception) {}
-            det = null; recV6 = null; recKo = null
+            try { recEn?.close() } catch (_: Exception) {}
+            try { recLatin?.close() } catch (_: Exception) {}
+            det = null; recV6 = null; recKo = null; recEn = null; recLatin = null
         }
     }
 }

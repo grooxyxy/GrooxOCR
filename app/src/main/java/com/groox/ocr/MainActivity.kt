@@ -161,7 +161,9 @@ class MainActivity : ComponentActivity() {
                             when (val s = uiState) {
                                 is OcrUiState.DoneBatch -> ResultScreen(
                                     items = s.items,
+                                    aiState = vm.ai.collectAsState().value,
                                     onBack = { vm.backToList() },
+                                    onAiRefine = { vm.runAiRefine() },
                                     onCopyAll = { txt ->
                                         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("GrooxOCR", txt))
@@ -186,9 +188,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onRemovePicked = { vm.removePicked(it) },
                                     onClearPicked = { vm.clearPicked() },
-                                    onInstallModels = {
-                                        vm.installModels(params.recMode != com.groox.ocr.data.RecMode.V6_ONLY)
-                                    },
+                                    onInstallModels = { vm.installModels() },
                                     onRunBatch = { vm.runOcrBatch(this@MainActivity) },
                                     onRecMode = { vm.setRecMode(it) },
                                     onReadingOrder = { vm.setReadingOrder(it) },

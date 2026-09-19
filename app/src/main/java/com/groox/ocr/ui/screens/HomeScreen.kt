@@ -66,11 +66,12 @@ fun HomeScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("GrooxOCR — PP-OCRv6-small", style = MaterialTheme.typography.headlineSmall)
+        Text("GrooxOCR — PP-OCR v5/v6 + AI dialog", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "OCR manhwa / manga / manhua. Model v6-small ter-bundel di APK " +
-                "(tanpa unduhan). Output per-bubble, dukung JPG/PNG/WebP " +
-                "sampai 720×16000+.",
+            "OCR manhwa / manga / manhua. 5 model ter-bundel di APK (tanpa unduhan): " +
+                "deteksi PP-OCRv6-small + rekognisi per bahasa — Korea (v5), English (v5), " +
+                "auto 中文・日本語 (v6-small), Latin ES/VI/ID (v5). Bonus AI agnes-2.5-flash " +
+                "menyusun hasil per dialog. Output per-bubble, JPG/PNG/WebP sampai 720×16000+.",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -78,9 +79,11 @@ fun HomeScreen(
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Model di APK", style = MaterialTheme.typography.titleSmall)
-                Text("Deteksi v6-small: " + if (modelState.detReady) "siap" else "belum disalin")
-                Text("Rekognisi v6-small: " + if (modelState.recV6Ready) "siap" else "belum disalin")
-                Text("Rekognisi Korea: " + if (modelState.recKoReady) "siap" else "belum disalin")
+                Text("Deteksi PP-OCRv6-small: " + if (modelState.detReady) "siap" else "belum disalin")
+                Text("Auto 中文・日本語 (v6-small): " + if (modelState.recV6Ready) "siap" else "belum disalin")
+                Text("Korea (PP-OCRv5): " + if (modelState.recKoReady) "siap" else "belum disalin")
+                Text("English (PP-OCRv5): " + if (modelState.recEnReady) "siap" else "belum disalin")
+                Text("Latin ES/VI/ID (PP-OCRv5): " + if (modelState.recLatinReady) "siap" else "belum disalin")
                 if (modelState.installing != null) {
                     LinearProgressIndicator(
                         progress = { modelState.progress },
